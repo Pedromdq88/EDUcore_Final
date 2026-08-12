@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EduCore SGE - Jardín Once Unidos</title>
+  <!-- Tailwind & Google Material Icons -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen">
+
+  <!-- PANTALLA DE LOGIN -->
+  <div id="loginPage" class="flex min-h-screen items-center justify-center p-4 bg-gradient-to-br from-green-50 to-emerald-100">
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 border border-slate-100">
+      <div class="text-center mb-8">
+        <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRQHqMXfF3lxGvgM2_jH6oAAwoSsZDYgkivVFqFKpr3Vg&s=10" alt="Logo" class="w-24 h-24 object-contain mx-auto rounded-xl">
+        <h1 class="text-2xl font-bold text-slate-900 mt-3">Jardín Once Unidos</h1>
+        <p class="text-sm text-slate-500 mt-1">EduCore Sistema Escolar</p>
+      </div>
+      <div class="space-y-5">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Email Institucional</label>
+          <input type="email" id="emailInput" value="direccion@onceunidos.com" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-500 focus:bg-white">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">Contraseña</label>
+          <input type="password" id="passwordInput" value="••••••••" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-500 focus:bg-white">
+        </div>
+        <button onclick="handleLogin()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3.5 rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer">
+          <span>Ingresar al Sistema</span><span class="material-icons-outlined text-md">login</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- INTERFAZ PRINCIPAL -->
+  <div id="mainDashboard" class="hidden min-h-screen flex flex-col">
+    <!-- Navbar -->
+    <header class="bg-white border-b border-slate-200 h-16 fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4">
+      <div class="flex items-center gap-2">
+        <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRQHqMXfF3lxGvgM2_jH6oAAwoSsZDYgkivVFqFKpr3Vg&s=10" alt="Logo Mini" class="w-8 h-8 object-contain">
+        <span class="font-bold text-lg text-slate-800 tracking-tight ml-1">EduCore</span>
+        <span class="text-slate-300">|</span>
+        <span class="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">Jardín Once Unidos</span>
+      </div>
+      
+      <!-- Esquina superior derecha: Datos Dinámicos Solicitados -->
+      <div class="flex items-center gap-3">
+        <button onclick="openMyProfile()" class="text-right hover:opacity-80 transition-all cursor-pointer">
+          <p id="userDisplay" class="text-sm font-semibold text-slate-800 tracking-tight"></p>
+          <p id="roleBadge" class="text-[11px] font-bold text-emerald-600 tracking-wider uppercase"></p>
+        </button>
+        <button onclick="handleLogout()" class="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full transition-colors cursor-pointer"><span class="material-icons-outlined">logout</span></button>
+      </div>
+    </header>
+
+    <!-- Sidebar Menu -->
+    <aside class="bg-white border-r border-slate-200 w-64 fixed top-16 bottom-0 left-0 z-30 pt-4">
+      <nav class="space-y-1 px-2">
+        <button onclick="showSection('inicioView')" id="nav-inicioView" class="w-full flex items-center gap-3 px-4 py-3 bg-emerald-50 text-emerald-700 font-medium rounded-xl text-sm text-left cursor-pointer">
+          <span class="material-icons-outlined">home</span><span>Inicio</span>
+        </button>
+        <button onclick="showSection('tutorsView')" id="nav-tutorsView" class="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl text-sm font-medium text-left cursor-pointer">
+          <span class="material-icons-outlined">family_restroom</span><span>Gestión de Padres</span>
+        </button>
+        <button onclick="showSection('alumnosView')" id="nav-alumnosView" class="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl text-sm font-medium text-left cursor-pointer">
+          <span class="material-icons-outlined">groups</span><span>Gestión de Alumnos</span>
+        </button>
+        <button onclick="showSection('staffView')" id="nav-staffView" class="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl text-sm font-medium text-left cursor-pointer">
+          <span class="material-icons-outlined">badge</span><span>Gestión de Personal</span>
+        </button>
+      </nav>
+    </aside>
+
+    <main class="flex-1 lg:pl-64 pt-16">
+      <div class="p-6 max-w-6xl mx-auto w-full">
+        
+        <!-- SECCIÓN: INICIO -->
+        <div id="inicioView" class="dashboard-view">
+          <div class="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md p-8 mb-8">
+            <h2 class="text-3xl font-bold tracking-tight mb-2">Establecimiento Escolar Once Unidos</h2>
+            <p class="text-emerald-50/90 text-sm max-w-xl">Consola de control jerárquico para el procesamiento de matrículas y control de personal docente.</p>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><span class="material-icons-outlined text-3xl text-emerald-600 mb-2">escalator_warning</span><h3 class="font-bold text-slate-800 text-sm">Alumnos Totales</h3><div id="countStudentsBadge" class="text-2xl font-bold text-slate-900">0</div></div>
+            <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><span class="material-icons-outlined text-3xl text-emerald-600 mb-2">family_restroom</span><h3 class="font-bold text-slate-800 text-sm">Padres Totales</h3><div id="countTutorsBadge" class="text-2xl font-bold text-slate-900">0</div></div>
+            <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><span class="material-icons-outlined text-3xl text-emerald-600 mb-2">badge</span><h3 class="font-bold text-slate-800 text-sm">Personal Activo</h3><div id="countStaffBadge" class="text-2xl font-bold text-slate-900">0</div></div>
+          </div>
+        </div>
+
+        <!-- SECCIÓN: PADRES -->
+        <div id="tutorsView" class="dashboard-view hidden">
+          <div class="flex items-center justify-between border-b border-slate-200 pb-4 mb-6">
+            <h2 class="text-2xl font-bold text-slate-900">Fichas de Padres / Tutores</h2>
+            <button onclick="toggleForm('tutorFormContainer')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm cursor-pointer shadow-xs font-medium">+ Agregar Responsable</button>
+          </div>
+          <div id="tutorFormContainer" class="hidden bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6 max-w-2xl">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <input type="text" id="tutorFirstName" placeholder="Nombre" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <input type="text" id="tutorLastName" placeholder="Apellido" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <input type="text" id="tutorDni" placeholder="DNI" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <select id="tutorRelationship" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 font-medium text-slate-700">
+                <option value="MADRE">Madre</option><option value="PADRE">Padre</option><option value="TUTOR_LEGAL">Tutor Legal</option>
+              </select>
+              <input type="text" id="tutorPhone" placeholder="Teléfono" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <input type="email" id="tutorEmail" placeholder="Email" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+            </div>
+            <div class="flex justify-end gap-2"><button onclick="submitTutor()" class="bg-emerald-600 text-white px-5 py-2 rounded-lg text-sm font-semibold cursor-pointer">Guardar Responsable</button></div>
+          </div>
+          <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <table class="w-full text-left border-collapse">
+              <thead><tr class="bg-slate-100 text-[11px] font-bold text-slate-500 uppercase"><th class="p-3">Nombre Completo</th><th class="p-3">DNI</th><th class="p-3">Vínculo Parentesco</th><th class="p-3 text-center">Ficha Legajo</th></tr></thead>
+              <tbody id="tutorsTableBody" class="divide-y divide-slate-100 text-sm text-slate-700"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SECCIÓN: ALUMNOS -->
+        <div id="alumnosView" class="dashboard-view hidden">
+          <div class="flex items-center justify-between border-b border-slate-200 pb-4 mb-6">
+            <h2 class="text-2xl font-bold text-slate-900">Gestión de Alumnos</h2>
+            <button onclick="openStudentForm()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm cursor-pointer shadow-xs font-medium">+ Nueva Matrícula</button>
+          </div>
+          
+          <!-- Filtros de Alumnos Requeridos -->
+          <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-xs mb-6 flex flex-wrap gap-4 items-center">
+            <span class="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><span class="material-icons-outlined text-sm">filter_alt</span> Filtrar Lista:</span>
+            <select id="filterStudentClassroom" onchange="filterStudentsTable()" class="p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 focus:outline-none">
+              <option value="TODAS">Todas las Salitas</option>
+              <option value="Maternal">Maternal</option><option value="Sala de 2 y 3">Sala de 2 y 3</option><option value="Sala de 4">Sala de 4</option><option value="Sala de 5">Sala de 5</option>
+            </select>
+          </div>
+
+          <div id="studentFormContainer" class="hidden bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6 max-w-2xl">
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+              <label class="block text-xs font-bold text-amber-800 mb-1">Responsable Familiar Conectado (Obligatorio)</label>
+              <select id="studentTutorSelect" class="w-full p-2 bg-white border rounded-lg text-sm font-medium"></select>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <input type="text" id="studentFirstName" placeholder="Nombre" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <input type="text" id="studentLastName" placeholder="Apellido" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <input type="text" id="studentDni" placeholder="DNI" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <input type="date" id="studentBirthDate" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <select id="studentClassroom" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 font-medium">
+                <option value="Maternal">Maternal</option><option value="Sala de 2 y 3">Sala de 2 y 3</option><option value="Sala de 4">Sala de 4</option><option value="Sala de 5">Sala de 5</option>
+              </select>
+              <input type="text" id="studentTelContacto" placeholder="Teléfono" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <input type="text" id="studentDireccion" placeholder="Dirección Familiar" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm sm:col-span-2 focus:outline-none focus:border-emerald-500">
+            </div>
+            <div class="flex justify-end gap-2"><button onclick="submitStudent()" class="bg-emerald-600 text-white px-5 py-2 rounded-lg text-sm font-semibold cursor-pointer">Matricular Alumno</button></div>
+          </div>
+          <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <table class="w-full text-left border-collapse">
+              <thead><tr class="bg-slate-100 text-[11px] font-bold text-slate-500 uppercase"><th class="p-3">Alumno</th><th class="p-3">DNI</th><th class="p-3">Sala</th><th class="p-3 text-center">Ficha Legajo</th></tr></thead>
+              <tbody id="studentsTableBody" class="divide-y divide-slate-100 text-sm text-slate-700"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SECCIÓN: PERSONAL -->
+        <div id="staffView" class="dashboard-view hidden">
+          <div class="flex items-center justify-between border-b border-slate-200 pb-4 mb-6">
+            <h2 class="text-2xl font-bold text-slate-900">Cuerpo Docente y Personal</h2>
+            <button onclick="toggleForm('staffFormContainer')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm cursor-pointer shadow-xs font-medium">+ Agregar nuevo docente</button>
+          </div>
+          
+          <!-- Filtros Docentes -->
+          <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-xs mb-6 flex flex-wrap gap-4 items-center">
+            <span class="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><span class="material-icons-outlined text-sm">filter_alt</span> Filtrar Lista:</span>
+            <select id="filterStaffRole" onchange="filterStaffTable()" class="p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 focus:outline-none">
+              <option value="TODOS">Todos los Cargos</option>
+              <option value="TEACHER">TEACHER (Docentes)</option>
+              <option value="ADMINISTRATIVE">ADMINISTRATIVE</option>
+              <option value="DIRECTOR">DIRECTOR</option>
+            </select>
+          </div>
+
+          <div id="staffFormContainer" class="hidden bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6 max-w-2xl">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <input type="text" id="staffFirstName" placeholder="Nombre" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <input type="text" id="staffLastName" placeholder="Apellido" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <input type="email" id="staffEmail" placeholder="Email Institucional" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm sm:col-span-2 focus:outline-none focus:border-emerald-500">
+              
+              <!-- Al cambiar el cargo, manejamos si se muestra o no la salita -->
+              <select id="staffRole" onchange="handleStaffRoleFormChange(this.value, 'staffClassroomBlock')" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 text-slate-700 font-medium">
+                <option value="TEACHER">TEACHER (Docente)</option>
+                <option value="ADMINISTRATIVE">ADMINISTRATIVE</option>
+                <option value="DIRECTOR">DIRECTOR</option>
+              </select>
+              <input type="date" id="staffHireDate" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              
+              <!-- Selección de salita asignada para rol docente -->
+              <div id="staffClassroomBlock" class="sm:col-span-2 bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                <label class="block text-xs font-bold text-emerald-800 mb-1">Asignar Salita Pedagógica</label>
+                <select id="staffAssignedClassroom" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm">
+                  <option value="Maternal">Maternal</option><option value="Sala de 2 y 3">Sala de 2 y 3</option><option value="Sala de 4">Sala de 4</option><option value="Sala de 5">Sala de 5</option>
+                </select>
+              </div>
+            </div>
+            <div class="flex justify-end gap-2"><button onclick="submitStaff()" class="bg-emerald-600 text-white px-5 py-2 rounded-lg text-sm font-semibold cursor-pointer">Guardar Personal</button></div>
+          </div>
+          <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <table class="w-full text-left border-collapse">
+              <thead><tr class="bg-slate-100 text-[11px] font-bold text-slate-500 uppercase"><th class="p-3">Docente / Personal</th><th class="p-3">Email Institucional</th><th class="p-3">Cargo Asignado</th><th class="p-3 text-center">Ficha Digital</th></tr></thead>
+              <tbody id="staffTableBody" class="divide-y divide-slate-100 text-sm text-slate-700"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- MODAL DE FICHA DE PERFIL EDITABLE DEFINITIVO -->
+  <div id="profileModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+      <div class="p-6 bg-gradient-to-r from-emerald-600 to-teal-700 text-white relative">
+        <button onclick="closeProfileModal()" class="absolute right-4 top-4 text-white/80 hover:text-white cursor-pointer"><span class="material-icons-outlined">close</span></button>
+        <span class="material-icons-outlined text-5xl opacity-90">account_circle</span>
+        <h3 id="modalTitle" class="text-xl font-bold mt-2"></h3>
+        <p id="modalSubtitle" class="text-xs text-emerald-100 uppercase tracking-wider font-bold"></p>
+      </div>
+      <div class="p-6 space-y-4 text-sm" id="modalBody"></div>
+      <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2 items-center" id="modalActions"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

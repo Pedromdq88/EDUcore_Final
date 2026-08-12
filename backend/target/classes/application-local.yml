@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: educore-sge-backend
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/educore_sge?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: Root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+  flyway:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  # Desactivamos el chequeo automático de RabbitMQ para limpiar la consola
+  health:
+    rabbit:
+      enabled: false

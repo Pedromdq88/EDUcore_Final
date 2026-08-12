@@ -1,0 +1,39 @@
+/* Customizations to extend Tailwind */
+body {
+  font-family: 'Roboto', sans-serif;
+}
+
+.dashboard-view {
+  animation: viewFade 0.2s ease-out forwards;
+}
+
+@keyframes viewFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Modal Inputs Styling */
+.modal-input {
+  width: 100%;
+  padding: 8px 12px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-top: 4px;
+  transition: all 0.2s;
+}
+
+.modal-input:focus {
+  outline: none;
+  border-color: #059669;
+  background-color: #ffffff;
+}
+
+.modal-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+letter-spacing: 0.05em;
+}

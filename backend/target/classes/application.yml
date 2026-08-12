@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: educore-sge-backend
+  profiles:
+    default: local
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/educore_sge?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: Root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        enable_lazy_load_no_trans: true  # 🟢 Formato YAML correcto y alineado
+
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never

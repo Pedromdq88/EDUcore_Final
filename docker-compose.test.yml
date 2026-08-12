@@ -1,0 +1,58 @@
+name: educore-sge-test
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: educore_sge_test
+      POSTGRES_USER: educore_test
+      POSTGRES_PASSWORD: educore_test
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    networks:
+      - educore-test
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    networks:
+      - educore-test
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: educore_test
+      RABBITMQ_DEFAULT_PASS: educore_test
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - educore-test
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8025"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    networks:
+      - educore-test
+
+networks:
+  educore-test:
+    driver: bridge

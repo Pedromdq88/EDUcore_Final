@@ -1,0 +1,25 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    url: ${TEST_DB_URL:jdbc:postgresql://localhost:5432/educore_sge_test}
+    username: ${TEST_DB_USERNAME:educore_test}
+    password: ${TEST_DB_PASSWORD:educore_test}
+  data:
+    redis:
+      host: ${TEST_REDIS_HOST:localhost}
+      port: ${TEST_REDIS_PORT:6379}
+  rabbitmq:
+    host: ${TEST_RABBITMQ_HOST:localhost}
+    port: ${TEST_RABBITMQ_PORT:5672}
+    username: ${TEST_RABBITMQ_USER:educore_test}
+    password: ${TEST_RABBITMQ_PASSWORD:educore_test}
+  mail:
+    host: ${TEST_MAIL_HOST:localhost}
+    port: ${TEST_MAIL_PORT:1025}
+
+management:
+  endpoint:
+    health:
+      show-details: always

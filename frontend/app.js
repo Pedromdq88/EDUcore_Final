@@ -5,24 +5,35 @@ let activeTutors = [];
 let activeStudents = [];
 let activeStaff = [];
 
+let currentTutorData = null;
+let currentStaffData = null;
+let currentEditingStudentId = null;
+
+// ========================================================
+// AUTENTICACIÓN Y NAVEGACIÓN
+// ========================================================
+
 function handleLogin() {
   const email = document.getElementById('emailInput').value.trim();
   if (!email) return;
-  
+
   let role = 'TEACHER';
   if (email.includes('direccion') || email.includes('director')) role = 'DIRECTOR';
   else if (email.includes('admin')) role = 'ADMINISTRATIVE';
+  else if (email.includes('tutor') || email.includes('padre')) role = 'TUTOR';
 
   currentSession.email = email;
   currentSession.role = role;
 
-  // Renderizar datos dinámicos requeridos en navbar
   document.getElementById('userDisplay').innerText = email;
-  document.getElementById('roleBadge').innerText = role === 'DIRECTOR' ? 'Directora' : (role === 'ADMINISTRATIVE' ? 'Administrativo' : 'Docente');
+  document.getElementById('roleBadge').innerText =
+      role === 'DIRECTOR' ? 'Directora' :
+          (role === 'ADMINISTRATIVE' ? 'Administrativo' :
+              (role === 'TUTOR' ? 'Tutor' : 'Docente'));
 
   document.getElementById('loginPage').classList.add('hidden');
   document.getElementById('mainDashboard').classList.remove('hidden');
-  
+
   refreshAllData();
 }
 
@@ -32,37 +43,54 @@ function showSection(sectionId) {
   document.querySelectorAll('.dashboard-view').forEach(v => v.classList.add('hidden'));
   document.getElementById(sectionId).classList.remove('hidden');
   document.querySelectorAll('aside nav button').forEach(b => b.classList.remove('bg-emerald-50', 'text-emerald-700'));
-  document.getElementById(`nav-${sectionId}`).classList.add('bg-emerald-50', 'text-emerald-700');
+  const btn = document.getElementById(`nav-${sectionId}`);
+  if (btn) btn.classList.add('bg-emerald-50', 'text-emerald-700');
 }
 
 function toggleForm(id) { document.getElementById(id).classList.toggle('hidden'); }
 
-function handleStaffRoleFormChange(role, targetBlockId) {
-  const block = document.getElementById(targetBlockId);
-  if (role === 'TEACHER') block.classList.remove('hidden');
-  else block.classList.add('hidden');
-}
-
 function refreshAllData() { fetchTutors(); fetchStudents(); fetchStaff(); }
 
+function getInitials(str) {
+  if (!str) return '--';
+  return str.split(' ').filter(Boolean).map(n => n[0]).join('').substring(0, 2).toUpperCase() || '--';
+}
+
 // ========================================================
-// CAPA DE CONSULTAS Y ALTAS CON ACTUALIZACIÓN AUTOMÁTICA
+// GESTIÓN DE TUTORES
 // ========================================================
 
 async function fetchTutors() {
   try {
-    const r = await fetch(`${API_BASE_URL}/tutors`, { headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }});
+    const r = await fetch(`${API_BASE_URL}/tutors`, {
+      headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }
+    });
     activeTutors = r.ok ? await r.json() : [];
     document.getElementById('countTutorsBadge').innerText = activeTutors.length;
+
     document.getElementById('tutorsTableBody').innerHTML = activeTutors.map(t => `
       <tr class="hover:bg-slate-50/80 transition-colors">
-        <td class="p-3 font-semibold text-slate-900">${t.lastName}, ${t.firstName}</td>
-        <td class="p-3 text-slate-600 font-medium">${t.documentNumber}</td>
-        <td class="p-3"><span class="bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-md">${t.relationship}</span></td>
-        <td class="p-3 text-center"><button onclick="viewTutorProfile('${t.id}')" class="text-slate-400 hover:text-emerald-600 p-1 rounded-full hover:bg-slate-100"><span class="material-icons-outlined">contact_page</span></button></td>
+        <td class="p-3 font-semibold text-slate-900">${t.lastName || ''}, ${t.firstName || ''}</td>
+        <td class="p-3 text-slate-600 font-medium">${t.documentNumber || '--'}</td>
+        <td class="p-3"><span class="bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-md">${t.relationship || 'Tutor'}</span></td>
+        <td class="p-3 text-center">
+          <button onclick="viewTutorProfile('${t.id}')" class="text-slate-400 hover:text-emerald-600 p-1 rounded-full hover:bg-slate-100">
+            <span class="material-icons-outlined">contact_page</span>
+          </button>
+        </td>
       </tr>
     `).join('');
-  } catch(e) { console.error(e); }
+
+    populateTutorSelects();
+  } catch(e) { console.error("Error consultando tutores:", e); }
+}
+
+function populateTutorSelects() {
+  const options = '<option value="">-- Seleccionar Tutor --</option>' + activeTutors.map(t => `<option value="${t.id}">${t.lastName}, ${t.firstName} (${t.relationship || 'Tutor'})</option>`).join('');
+  const t1 = document.getElementById('studentTutor1');
+  const t2 = document.getElementById('studentTutor2');
+  if(t1) t1.innerHTML = options;
+  if(t2) t2.innerHTML = options;
 }
 
 async function submitTutor() {
@@ -80,45 +108,239 @@ async function submitTutor() {
     body: JSON.stringify(payload)
   });
   toggleForm('tutorFormContainer');
-  fetchTutors(); // 🔁 Refresh automático
+  fetchTutors();
 }
 
-function openStudentForm() {
-  const select = document.getElementById('studentTutorSelect');
-  select.innerHTML = '<option value="">-- Seleccionar Responsable --</option>' + activeTutors.map(t => `<option value="${t.id}">${t.lastName}, ${t.firstName} (${t.relationship})</option>`).join('');
-  toggleForm('studentFormContainer');
+function viewTutorProfile(id) {
+  const t = activeTutors.find(item => item.id === id);
+  if(!t) {
+    alert("No se encontraron los datos de este tutor.");
+    return;
+  }
+
+  setTutorData({
+    id: t.id,
+    nombre: t.firstName,
+    apellido: t.lastName,
+    vinculo: t.relationship || 'Tutor Legal',
+    dni: t.documentNumber,
+    nacionalidad: t.nacionalidad || 'Argentina',
+    profesion: t.profesion || '-',
+    condicionActividad: t.condicionActividad || 'Trabaja',
+    celular: t.phone || '-',
+    telefonoFijo: t.phoneFijo || '-',
+    email: t.email || '-',
+    conviveEstudiante: t.convive || 'Sí',
+    domicilio: t.direccion || '-',
+    hijos: activeStudents.filter(s => s.tutorIds && s.tutorIds.includes(t.id)).map(s => ({
+      id: s.id,
+      nombre: s.firstName,
+      apellido: s.lastName,
+      curso: s.classroom,
+      parentesco: 'Hijo/a'
+    }))
+  });
 }
 
-// =========================================================================
-// MÉTODOS DE ALUMNOS 
-// =========================================================================
+function setTutorData(data) {
+  if (!data) return;
+  currentTutorData = data;
+
+  document.querySelectorAll('.dashboard-view').forEach(v => v.classList.add('hidden'));
+  document.getElementById('tutorProfileView').classList.remove('hidden');
+
+  const nombreCompleto = `${data.nombre || data.firstName || ''} ${data.apellido || data.lastName || ''}`.trim() || 'Sin Nombre';
+  document.getElementById('tutor-nombre').textContent = nombreCompleto;
+  document.getElementById('tutor-avatar').textContent = getInitials(nombreCompleto);
+  document.getElementById('tutor-vinculo').textContent = `Vínculo: ${data.vinculo || data.relationship || '-'}`;
+  document.getElementById('tutor-dni').textContent = `DNI: ${data.dni || data.documentNumber || '-'}`;
+
+  document.getElementById('tutor-nacionalidad').textContent = data.nacionalidad || '-';
+  document.getElementById('tutor-profesion').textContent = data.profesion || '-';
+  document.getElementById('tutor-actividad').textContent = data.condicionActividad || '-';
+  document.getElementById('tutor-celular').textContent = data.celular || data.phone || '-';
+  document.getElementById('tutor-fijo').textContent = data.telefonoFijo || '-';
+  document.getElementById('tutor-email').textContent = data.email || '-';
+  document.getElementById('tutor-convive').textContent = data.conviveEstudiante || data.convive || 'Sí';
+  document.getElementById('tutor-domicilio').textContent = data.domicilio || data.direccion || '-';
+
+  const hijosCont = document.getElementById('hijos-container');
+  hijosCont.innerHTML = '';
+
+  if (data.hijos && data.hijos.length > 0) {
+    data.hijos.forEach(h => {
+      const item = document.createElement('div');
+      item.className = 'student-item bg-slate-50 border border-slate-200 rounded-lg p-3 flex justify-between items-center cursor-pointer hover:border-emerald-500 transition-all';
+      item.onclick = () => showStudentProfile(h.id);
+      item.innerHTML = `
+        <div>
+            <h4 class="font-bold text-slate-800 text-sm">${h.nombre || h.firstName} ${h.apellido || h.lastName}</h4>
+            <p class="text-xs text-slate-500">Curso: ${h.curso || h.classroom || '-'}</p>
+        </div>
+        <span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded">${h.parentesco || 'Hijo/a'}</span>`;
+      hijosCont.appendChild(item);
+    });
+  } else {
+    hijosCont.innerHTML = '<p class="text-xs text-slate-400 col-span-2">No hay alumnos vinculados registrados.</p>';
+  }
+
+  evaluarPermisosPerfilTutor();
+}
+
+function hideTutorProfile() {
+  document.getElementById('tutorProfileView').classList.add('hidden');
+  showSection('tutorsView');
+}
+
+function evaluarPermisosPerfilTutor() {
+  const btnEdit = document.getElementById('btn-edit-tutor');
+  const btnBaja = document.getElementById('btn-baja-tutor');
+  const role = currentSession.role;
+
+  if (btnEdit) {
+    if (['DIRECTOR', 'ADMINISTRATIVE', 'TEACHER', 'TUTOR'].includes(role)) {
+      btnEdit.classList.remove('hidden');
+    } else {
+      btnEdit.classList.add('hidden');
+    }
+  }
+
+  if (btnBaja) {
+    if (['DIRECTOR', 'ADMINISTRATIVE'].includes(role)) {
+      btnBaja.classList.remove('hidden');
+    } else {
+      btnBaja.classList.add('hidden');
+    }
+  }
+}
+
+function abrirModalEdicionTutor() {
+  if (!currentTutorData) return;
+  document.getElementById('edit-nombre').value = currentTutorData.nombre || currentTutorData.firstName || '';
+  document.getElementById('edit-apellido').value = currentTutorData.apellido || currentTutorData.lastName || '';
+  document.getElementById('edit-vinculo').value = currentTutorData.vinculo || currentTutorData.relationship || 'Madre';
+  document.getElementById('edit-dni').value = currentTutorData.dni || currentTutorData.documentNumber || '';
+  document.getElementById('edit-nacionalidad').value = currentTutorData.nacionalidad || 'Argentina';
+  document.getElementById('edit-profesion').value = currentTutorData.profesion || '';
+  document.getElementById('edit-actividad').value = currentTutorData.condicionActividad || 'Trabaja';
+  document.getElementById('edit-celular').value = currentTutorData.celular || currentTutorData.phone || '';
+  document.getElementById('edit-email').value = currentTutorData.email || '';
+  document.getElementById('edit-calle').value = currentTutorData.domicilio || currentTutorData.direccion || '';
+  document.getElementById('edit-convive').value = currentTutorData.conviveEstudiante || currentTutorData.convive || 'Sí';
+
+  document.getElementById('tutorEditModal').classList.remove('hidden');
+}
+
+function cerrarModalEdicionTutor() {
+  document.getElementById('tutorEditModal').classList.add('hidden');
+}
+
+async function guardarDatosTutor(e) {
+  e.preventDefault();
+  const updatedData = {
+    ...currentTutorData,
+    firstName: document.getElementById('edit-nombre').value.trim(),
+    lastName: document.getElementById('edit-apellido').value.trim(),
+    relationship: document.getElementById('edit-vinculo').value,
+    documentNumber: document.getElementById('edit-dni').value.trim(),
+    nacionalidad: document.getElementById('edit-nacionalidad').value.trim(),
+    profesion: document.getElementById('edit-profesion').value.trim(),
+    condicionActividad: document.getElementById('edit-actividad').value,
+    phone: document.getElementById('edit-celular').value.trim(),
+    email: document.getElementById('edit-email').value.trim(),
+    direccion: document.getElementById('edit-calle').value.trim(),
+    convive: document.getElementById('edit-convive').value
+  };
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/tutors/${currentTutorData.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      },
+      body: JSON.stringify(updatedData)
+    });
+
+    if (response.ok) {
+      alert("¡Datos del tutor actualizados con éxito!");
+      cerrarModalEdicionTutor();
+      fetchTutors();
+    } else {
+      setTutorData(updatedData);
+      cerrarModalEdicionTutor();
+    }
+  } catch(error) {
+    setTutorData(updatedData);
+    cerrarModalEdicionTutor();
+  }
+}
+
+async function confirmarBajaTutor() {
+  if (!currentTutorData || !currentTutorData.id) {
+    alert("No se pudo identificar la ficha del tutor a dar de baja.");
+    return;
+  }
+
+  const nombreCompleto = `${currentTutorData.nombre || currentTutorData.firstName || ''} ${currentTutorData.apellido || currentTutorData.lastName || ''}`.trim();
+
+  const confirmacion = confirm(
+      `¿Estás seguro de que deseas dar de baja al tutor "${nombreCompleto}"?\n\n` +
+      `ATENCIÓN: Si este tutor es el ÚNICO responsable asignado a sus alumnos vinculados, los alumnos también serán dados de baja e ingresados al registro histórico automáticamente.`
+  );
+
+  if (!confirmacion) return;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/tutors/${currentTutorData.id}/baja`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      }
+    });
+
+    if (response.ok || response.status === 200 || response.status === 204) {
+      alert(`Baja procesada con éxito.\nEl tutor y los alumnos sin otros tutores asignados pasaron al registro histórico.`);
+      hideTutorProfile();
+      await refreshAllData();
+      showSection('tutorsView');
+    } else {
+      const errorMsg = await response.text();
+      alert(`No se pudo procesar la baja en el servidor: ${errorMsg || 'Error desconocido'}`);
+    }
+
+  } catch (error) {
+    console.error("Error al procesar la baja del tutor:", error);
+    alert("Hubo un fallo de red o conexión con el servidor al intentar dar de baja.");
+  }
+}
+
+// ========================================================
+// GESTIÓN DE ALUMNOS
+// ========================================================
 
 async function fetchStudents() {
   try {
-    console.log("Intentando conectar con: " + `${API_BASE_URL}/students`);
-    const r = await fetch(`${API_BASE_URL}/students`, { 
+    const r = await fetch(`${API_BASE_URL}/students`, {
       headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }
     });
-    
-    if (!r.ok) {
-      console.error("El backend respondió con código de error:", r.status);
-    }
-
     activeStudents = r.ok ? await r.json() : [];
-    console.log("Alumnos recuperados de MySQL:", activeStudents);
     renderStudentsTable(activeStudents);
-  } catch(e) { 
-    console.error("Se cortó la conexión física con StudentController:", e);
-    renderStudentsTable([]); 
+  } catch(e) {
+    console.error("Error al consultar estudiantes:", e);
+    renderStudentsTable([]);
   }
 }
 
 function renderStudentsTable(list) {
   document.getElementById('countStudentsBadge').innerText = list.length;
   const tbody = document.getElementById('studentsTableBody');
-  
+
   if (!list || list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400 text-xs">No hay alumnos registrados o no se pudo conectar con el servidor.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400 text-xs">No hay alumnos registrados.</td></tr>`;
     return;
   }
 
@@ -128,7 +350,7 @@ function renderStudentsTable(list) {
       <td class="p-3 text-slate-600 font-medium">${s.documentNumber || '--'}</td>
       <td class="p-3"><span class="bg-blue-50 text-blue-700 text-xs font-bold px-2.5 py-1 rounded-full">${s.classroom || 'Sin asignar'}</span></td>
       <td class="p-3 text-center">
-        <button onclick="viewStudentProfile('${s.id}')" class="text-slate-400 hover:text-emerald-600 p-1 rounded-full hover:bg-slate-100">
+        <button onclick="showStudentProfile('${s.id}')" class="text-slate-400 hover:text-emerald-600 p-1 rounded-full hover:bg-slate-100">
           <span class="material-icons-outlined">contact_page</span>
         </button>
       </td>
@@ -142,28 +364,146 @@ function filterStudentsTable() {
   else { renderStudentsTable(activeStudents.filter(s => s.classroom === target)); }
 }
 
+async function showStudentProfile(studentId) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/students/${studentId}`, {
+      headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }
+    });
+
+    if (!response.ok) throw new Error("Error al consultar el perfil");
+    const data = await response.json();
+
+    document.querySelectorAll('.dashboard-view').forEach(view => view.classList.add('hidden'));
+    document.getElementById('studentProfileView').classList.remove('hidden');
+
+    const nombre = data.firstName || '';
+    const apellido = data.lastName || '';
+    document.getElementById('alumno-nombre').textContent = `${nombre} ${apellido}`.trim() || '-';
+    document.getElementById('alumno-avatar').textContent = getInitials(`${nombre} ${apellido}`);
+
+    document.getElementById('alumno-legajo').textContent = `Legajo: ${data.id || '-'}`;
+    document.getElementById('alumno-curso').textContent = `Salita: ${data.classroom || '-'}`;
+    document.getElementById('alumno-estado').textContent = `Estado: ${data.status || 'ACTIVO'}`;
+    document.getElementById('alumno-dni').textContent = data.documentNumber || '-';
+    document.getElementById('alumno-nacimiento').textContent = data.birthDate || '-';
+    document.getElementById('alumno-domicilio').textContent = data.direccion || '-';
+
+    const btnBajaAlumno = document.getElementById('btn-baja-alumno');
+    if (btnBajaAlumno) {
+      if (['DIRECTOR', 'ADMINISTRATIVE'].includes(currentSession.role)) {
+        btnBajaAlumno.classList.remove('hidden');
+      } else {
+        btnBajaAlumno.classList.add('hidden');
+      }
+    }
+
+    const tutoresCont = document.getElementById('tutores-container');
+    tutoresCont.innerHTML = '';
+    let listaTutores = data.tutors || data.tutores || [];
+
+    if (listaTutores.length === 0 && activeTutors.length > 0 && data.tutorIds) {
+      listaTutores = activeTutors.filter(t => data.tutorIds.includes(t.id));
+    }
+
+    if (listaTutores.length > 0) {
+      listaTutores.forEach((t, index) => {
+        const isPrimary = index === 0;
+        const card = document.createElement('div');
+        card.className = "p-4 bg-white border border-slate-200 rounded-xl shadow-xs hover:border-emerald-500 transition-all cursor-pointer flex justify-between items-center group mb-2";
+        card.onclick = () => viewTutorProfile(t.id || t.tutorId);
+
+        card.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">
+              ${getInitials(`${t.firstName || ''} ${t.lastName || ''}`)}
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h4 class="font-bold text-slate-900 group-hover:text-emerald-700">${t.lastName || ''}, ${t.firstName || 'Tutor'}</h4>
+                <span class="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-md">${isPrimary ? 'Contacto Emergencia N°1' : 'Contacto Emergencia N°2'}</span>
+              </div>
+              <p class="text-xs text-slate-500 mt-1">
+                Vínculo: ${t.relationship || 'Tutor Legal'} | DNI: ${t.documentNumber || '--'} | Tel: ${t.phone || 'Sin Registrar'}
+              </p>
+            </div>
+          </div>
+          <span class="material-icons-outlined text-slate-400 group-hover:text-emerald-600">chevron_right</span>
+        `;
+        tutoresCont.appendChild(card);
+      });
+    } else {
+      tutoresCont.innerHTML = `<p class="text-xs text-slate-400 italic p-3">No hay tutores vinculados a este alumno.</p>`;
+    }
+
+  } catch (error) {
+    console.error("Error al cargar perfil de alumno:", error);
+    alert("No se pudo cargar la ficha del alumno.");
+  }
+}
+
+function hideStudentProfile() {
+  document.getElementById('studentProfileView').classList.add('hidden');
+  document.getElementById('alumnosView').classList.remove('hidden');
+  fetchStudents();
+}
+
+async function confirmarBajaAlumno() {
+  const legajoText = document.getElementById('alumno-legajo').textContent;
+  const studentId = legajoText.replace('Legajo: ', '').trim();
+
+  const student = activeStudents.find(s => s.id === studentId);
+  if (!student) return;
+
+  const confirmacion = confirm(`¿Estás seguro de dar de baja al alumno "${student.firstName} ${student.lastName}"?\n\nEl legajo pasará al registro histórico.`);
+  if (!confirmacion) return;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/students/${studentId}/baja`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      }
+    });
+
+    if (!response.ok) throw new Error("Error en la solicitud de baja");
+
+    alert("El alumno ha sido dado de baja correctamente.");
+    hideStudentProfile();
+    refreshAllData();
+
+  } catch (error) {
+    console.error("Error al dar de baja alumno:", error);
+    alert("No se pudo dar de baja al alumno en el servidor.");
+  }
+}
+
 async function submitStudent() {
-  const birthDateValue = document.getElementById('studentBirthDate').value;
-  
+  const birthDateValue = document.getElementById('studentBirthDate')?.value;
+
   if (!birthDateValue) {
     alert("La fecha de nacimiento es obligatoria para registrar la matrícula.");
     return;
   }
 
-  // Estructura limpia y adaptada a StudentJpaEntity
+  const selectedTutors = getSelectedTutors();
+  if (selectedTutors.length === 0) {
+    alert("Debes seleccionar al menos 1 tutor responsable.");
+    return;
+  }
+
   const studentData = {
-    firstName: document.getElementById('studentFirstName').value.trim(),
-    lastName: document.getElementById('studentLastName').value.trim(),
-    documentNumber: document.getElementById('studentDni').value.trim(), 
-    birthDate: birthDateValue,   
-    classroom: document.getElementById('studentClassroom').value,
-    direccion: document.getElementById('studentDireccion').value.trim(),
-    telefonoContacto: document.getElementById('studentTelefono').value.trim(),
+    firstName: document.getElementById('studentFirstName')?.value.trim() || '',
+    lastName: document.getElementById('studentLastName')?.value.trim() || '',
+    documentNumber: document.getElementById('studentDni')?.value.trim() || '',
+    birthDate: birthDateValue,
+    classroom: document.getElementById('studentClassroom')?.value || '',
+    direccion: document.getElementById('studentDireccion')?.value.trim() || '',
     status: "ACTIVE"
   };
 
   try {
-    console.log("Enviando nuevo alumno...", studentData);
     const response = await fetch(`${API_BASE_URL}/students`, {
       method: 'POST',
       headers: {
@@ -174,73 +514,128 @@ async function submitStudent() {
       body: JSON.stringify(studentData)
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Rechazo de Java:", errorText);
-      throw new Error("Error al guardar el alumno en el servidor");
-    }
-
+    if (!response.ok) throw new Error("Error al guardar el alumno en el servidor");
     const alumnoCreado = await response.json();
-    console.log("Alumno creado con éxito en DB:", alumnoCreado);
 
-    // Vinculamos al tutor mapeando el ID real retornado por la base de datos
-    const tutorId = document.getElementById('studentTutorSelect').value; 
-    if (tutorId && alumnoCreado.id) {
-      console.log(`Asociando alumno ${alumnoCreado.id} con tutor ${tutorId}...`);
-      const linkResponse = await fetch(`${API_BASE_URL}/students/${alumnoCreado.id}/tutors/${tutorId}`, {
+    if (alumnoCreado.id) {
+      await fetch(`${API_BASE_URL}/students/${alumnoCreado.id}/tutors`, {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           'X-Institution-Id': currentSession.institutionId,
           'X-User-Role': currentSession.role
-        }
+        },
+        body: JSON.stringify(selectedTutors)
       });
-      
-      if(linkResponse.ok) {
-        alert("¡Matrícula y Tutor asignados correctamente!");
-      }
-    } else {
-      alert("Matrícula creada sin tutor asignado.");
     }
 
+    alert("¡Matrícula y Tutores vinculados correctamente!");
     toggleForm('studentFormContainer');
     refreshAllData();
 
   } catch (error) {
-    console.error("Explotó el alta de matrícula:", error);
-    alert("No se pudo registrar la matrícula. Revisá las restricciones de Java.");
+    console.error("Error en la matrícula:", error);
+    alert("No se pudo registrar la matrícula. Revisa los datos ingresados.");
   }
 }
 
-async function fetchStaff() {
-  try {
-    const r = await fetch(`${API_BASE_URL}/institution/staff`, { headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }});
-    activeStaff = r.ok ? await r.json() : [
-      { id: "dir-1", firstName: "Alicia", lastName: "Fernández", email: "direccion@onceunidos.com", role: "DIRECTOR", hireDate: "2026-02-15", classroom: "" },
-      { id: "staff-2", firstName: "Laura", lastName: "Sánchez", email: "laura@onceunidos.com", role: "TEACHER", hireDate: "2026-05-10", classroom: "Sala de 4" }
-    ];
-    renderStaffTable(activeStaff);
-  } catch(e) {}
+function getSelectedTutors() {
+  const tutor1Id = document.getElementById('studentTutor1')?.value;
+  const tutor2Id = document.getElementById('studentTutor2')?.value;
+
+  const tutors = [];
+  if (tutor1Id) tutors.push({ tutorId: tutor1Id, isPrimary: true });
+  if (tutor2Id && tutor2Id !== tutor1Id) tutors.push({ tutorId: tutor2Id, isPrimary: false });
+
+  if (tutors.length > 2) {
+    alert("Un alumno solo puede tener como máximo 2 tutores legales asignados.");
+    return tutors.slice(0, 2);
+  }
+  return tutors;
 }
 
+// ========================================================
+// GESTIÓN DE PERSONAL / STAFF
+// ========================================================
+
 function renderStaffTable(list) {
-  document.getElementById('countStaffBadge').innerText = list.length;
-  document.getElementById('staffTableBody').innerHTML = list.map(u => `
+  const countBadge = document.getElementById('countStaffBadge');
+  if (countBadge) countBadge.innerText = list ? list.length : 0;
+
+  const tbody = document.getElementById('staffTableBody');
+  if (!tbody) return;
+
+  if (!list || list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400 text-xs">No hay miembros del personal registrados.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = list.map(u => `
     <tr class="hover:bg-slate-50/80 transition-colors">
-      <td class="p-3 font-semibold text-slate-900">${u.lastName}, ${u.firstName}</td>
-      <td class="p-3 text-slate-600 font-medium">${u.email}</td>
+      <td class="p-3 font-semibold text-slate-900">${u.lastName || ''}, ${u.firstName || ''}</td>
+      <td class="p-3 text-slate-600 font-medium">${u.email || '--'}</td>
       <td class="p-3">
-        <span class="bg-emerald-50 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded">${u.role}</span>
+        <span class="bg-emerald-50 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded">${u.role || 'STAFF'}</span>
         ${u.classroom ? `<span class="bg-blue-50 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded ml-1">${u.classroom}</span>` : ''}
       </td>
-      <td class="p-3 text-xs text-slate-500">${u.hireDate || '--'}</td>
-      <td class="p-3 text-center"><button onclick="viewStaffProfile('${u.id}')" class="text-slate-400 hover:text-emerald-600 p-1 rounded-full hover:bg-slate-100"><span class="material-icons-outlined">contact_page</span></button></td>
+      <td class="p-3 text-center">
+        <button onclick="viewStaffProfile('${u.id}')" class="text-slate-400 hover:text-emerald-600 p-1 rounded-full hover:bg-slate-100 cursor-pointer">
+          <span class="material-icons-outlined">contact_page</span>
+        </button>
+      </td>
     </tr>
   `).join('');
 }
 
+async function fetchStaff() {
+  try {
+    const r = await fetch(`${API_BASE_URL}/institution/staff`, {
+      headers: {
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      }
+    });
+    activeStaff = r.ok ? await r.json() : [];
+    renderStaffTable(activeStaff);
+
+  } catch(e) {
+    console.error("Error al obtener el personal:", e);
+    renderStaffTable([]);
+  }
+}
+
+function handleStaffRoleFormChange(role, targetBlockId) {
+  const block = document.getElementById(targetBlockId);
+  if (!block) return;
+
+  if (role === 'TEACHER') {
+    block.classList.remove('hidden');
+  } else {
+    block.classList.add('hidden');
+  }
+}
+
+function filterStaffTable() {
+  const targetRole = document.getElementById('filterStaffRole')?.value;
+  if (!targetRole || targetRole === 'TODOS') {
+    renderStaffTable(activeStaff);
+  } else {
+    renderStaffTable(activeStaff.filter(u => u.role === targetRole));
+  }
+}
+
 async function submitStaff() {
-  const role = document.getElementById('staffRole').value;
-  const hireDateValue = document.getElementById('staffHireDate').value;
+  const role = document.getElementById('staffRole')?.value;
+  const hireDateValue = document.getElementById('staffHireDate')?.value;
+
+  const firstName = document.getElementById('staffFirstName')?.value.trim() || '';
+  const lastName = document.getElementById('staffLastName')?.value.trim() || '';
+  const email = document.getElementById('staffEmail')?.value.trim() || '';
+
+  if (!firstName || !lastName) {
+    alert("El nombre y apellido son obligatorios.");
+    return;
+  }
 
   if (!hireDateValue) {
     alert("La fecha de contratación es obligatoria.");
@@ -248,214 +643,322 @@ async function submitStaff() {
   }
 
   const payload = {
-    id: crypto.randomUUID(), // 🟢 Genera un UUID único (ej: 'a1b2c3d4-...') para que Java no reciba un ID null
-    firstName: document.getElementById('staffFirstName').value.trim(),
-    lastName: document.getElementById('staffLastName').value.trim(),
-    email: document.getElementById('staffEmail').value.trim(),
+    id: crypto.randomUUID(),
+    firstName: firstName,
+    lastName: lastName,
+    email: email,
     password: "123",
     role: role,
     hireDate: hireDateValue,
-    classroom: role === 'TEACHER' ? document.getElementById('staffAssignedClassroom').value : null,
-    tenantId: currentSession.institutionId 
+    classroom: role === 'TEACHER' ? document.getElementById('staffAssignedClassroom')?.value : null,
+    tenantId: currentSession.institutionId
   };
 
   try {
-    console.log("Enviando personal con ID automático...", payload);
-    
     const response = await fetch(`${API_BASE_URL}/institution/staff`, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json', 
-        'X-Institution-Id': currentSession.institutionId, 
-        'X-User-Role': currentSession.role 
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
       },
       body: JSON.stringify(payload)
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Rechazo del backend de Staff:", errorText);
-      throw new Error(`Error en el servidor (Código ${response.status})`);
+    if (!response.ok) throw new Error("Error al registrar personal en el servidor");
+
+    let savedObject = payload;
+    try {
+      const responseData = await response.json();
+      if (responseData && (responseData.id || responseData.email)) {
+        savedObject = responseData;
+      }
+    } catch (jsonErr) {}
+
+    const index = activeStaff.findIndex(item => item.id === savedObject.id || item.email === savedObject.email);
+    if (index >= 0) {
+      activeStaff[index] = savedObject;
+    } else {
+      activeStaff.push(savedObject);
     }
 
-    alert("¡Miembro del personal registrado correctamente!");
+    renderStaffTable(activeStaff);
+
+    document.getElementById('staffFirstName').value = '';
+    document.getElementById('staffLastName').value = '';
+    document.getElementById('staffEmail').value = '';
+    document.getElementById('staffHireDate').value = '';
     toggleForm('staffFormContainer');
-    fetchStaff(); // 🔁 Recarga la grilla activa de inmediato
+
+    alert("¡Miembro del personal registrado correctamente!");
+
+    setTimeout(() => {
+      fetchStaff();
+    }, 500);
 
   } catch (error) {
-    console.error("Error en el alta de personal:", error);
-    alert("Hubo un problema en el servidor al registrar al personal. Verificá que el email sea único.");
+    console.error("Error en alta de personal:", error);
+    alert("Hubo un problema al registrar al miembro del personal. Revisa los datos o la conexión.");
   }
-}
-// ========================================================
-// LEGAJOS DIGITALES EDITABLES REALES
-// ========================================================
-
-function openProfileModal(title, subtitle, bodyHtml, actionsHtml) {
-  document.getElementById('modalTitle').innerText = title;
-  document.getElementById('modalSubtitle').innerText = subtitle;
-  document.getElementById('modalBody').innerHTML = bodyHtml;
-  document.getElementById('modalActions').innerHTML = actionsHtml;
-  document.getElementById('profileModal').classList.remove('hidden');
-}
-
-function closeProfileModal() { document.getElementById('profileModal').classList.add('hidden'); }
-
-function openMyProfile() {
-  const isDirector = currentSession.role === 'DIRECTOR';
-  const body = `
-    <div><label class="modal-label">Mi Cuenta Escolar</label><input type="text" id="myEmail" value="${currentSession.email}" class="modal-input" ${!isDirector?'disabled':''}></div>
-    <div><label class="modal-label">Jerarquía Autorizada</label><input type="text" value="${currentSession.role}" class="modal-input" disabled></div>
-  `;
-  const actions = `
-    <button onclick="closeProfileModal()" class="px-4 py-2 border rounded-xl text-xs font-medium bg-white text-slate-600">Cerrar</button>
-    <button onclick="saveMyProfileChanges()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs">Guardar Cambios</button>
-  `;
-  openProfileModal("Mi Perfil Escolar", "Sesión Activa", body, actions);
-}
-
-function saveMyProfileChanges() {
-  alert("Perfil actualizado correctamente en la sesión actual.");
-  closeProfileModal();
 }
 
 function viewStaffProfile(id) {
-  const u = activeStaff.find(item => item.id === id);
-  if(!u) return;
-  const isDirector = currentSession.role === 'DIRECTOR';
-
-  const body = `
-    <input type="hidden" id="editStaffId" value="${u.id}">
-    <div><label class="modal-label">Nombre</label><input type="text" id="editStaffFirstName" value="${u.firstName}" class="modal-input" ${!isDirector?'disabled':''}></div>
-    <div><label class="modal-label">Apellido</label><input type="text" id="editStaffLastName" value="${u.lastName}" class="modal-input" ${!isDirector?'disabled':''}></div>
-    <div><label class="modal-label">Email Acceso</label><input type="email" id="editStaffEmail" value="${u.email}" class="modal-input" ${!isDirector?'disabled':''}></div>
-    <div>
-      <label class="modal-label">Cargo Administrativo</label>
-      <select id="editStaffRole" onchange="handleStaffRoleFormChange(this.value, 'editClassroomBlock')" class="modal-input" ${!isDirector?'disabled':''}>
-        <option value="TEACHER" ${u.role==='TEACHER'?'selected':''}>TEACHER</option>
-        <option value="ADMINISTRATIVE" ${u.role==='ADMINISTRATIVE'?'selected':''}>ADMINISTRATIVE</option>
-        <option value="DIRECTOR" ${u.role==='DIRECTOR'?'selected':''}>DIRECTOR</option>
-      </select>
-    </div>
-    <div id="editClassroomBlock" class="${u.role==='TEACHER'?'':'hidden'} bg-emerald-50 p-2.5 rounded-lg mt-2">
-      <label class="modal-label text-emerald-800">Salita Asignada</label>
-      <select id="editStaffClassroom" class="modal-input">
-        <option value="Maternal" ${u.classroom==='Maternal'?'selected':''}>Maternal</option>
-        <option value="Sala de 2 y 3" ${u.classroom==='Sala de 2 y 3'?'selected':''}>Sala de 2 y 3</option>
-        <option value="Sala de 4" ${u.classroom==='Sala de 4'?'selected':''}>Sala de 4</option>
-        <option value="Sala de 5" ${u.classroom==='Sala de 5'?'selected':''}>Sala de 5</option>
-      </select>
-    </div>
-  `;
-
-  let actions = `<button onclick="closeProfileModal()" class="px-4 py-2 border rounded-xl text-xs bg-white text-slate-600">Cerrar</button>`;
-  if(isDirector) {
-    actions += `<button onclick="saveStaffProfileChanges()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs">Guardar Cambios</button>`;
-    actions += `<button onclick="deleteStaffFromServer('${u.id}')" class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl flex items-center gap-0.5"><span class="material-icons-outlined text-sm">delete</span> Dar de Baja</button>`;
+  const staffMember = activeStaff.find(u => u.id === id);
+  if (!staffMember) {
+    alert("No se encontraron los datos del legajo seleccionado.");
+    return;
   }
+  currentStaffData = staffMember;
 
-  openProfileModal(`${u.lastName}, ${u.firstName}`, "Perfil Modificable", body, actions);
-}
+  const cursosAsignados = staffMember.classroom ? [{
+    nombre: staffMember.classroom,
+    turno: "Turno Mañana",
+    cantidadAlumnos: activeStudents.filter(s => s.classroom === staffMember.classroom).length,
+    rol: staffMember.role === 'TEACHER' ? 'Docente Titular' : staffMember.role
+  }] : [];
 
-async function saveStaffProfileChanges() {
-  const id = document.getElementById('editStaffId').value;
-  const role = document.getElementById('editStaffRole').value;
-  const updated = {
-    firstName: document.getElementById('editStaffFirstName').value,
-    lastName: document.getElementById('editStaffLastName').value,
-    email: document.getElementById('editStaffEmail').value,
-    role: role,
-    classroom: role === 'TEACHER' ? document.getElementById('editStaffClassroom').value : null
-  };
-  
-  await fetch(`${API_BASE_URL}/institution/staff/${id}`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role },
-    body: JSON.stringify(updated)
+  setDocenteData({
+    id: staffMember.id,
+    nombre: staffMember.firstName || '',
+    apellido: staffMember.lastName || '',
+    legajo: staffMember.id ? staffMember.id.substring(0, 8) : '-',
+    cargo: staffMember.role || 'STAFF',
+    estado: 'ACTIVO',
+    dni: staffMember.documentNumber || '-',
+    email: staffMember.email || '-',
+    telefono: staffMember.phone || '-',
+    fechaIngreso: staffMember.hireDate || '-',
+    cursos: cursosAsignados
   });
-  closeProfileModal();
-  fetchStaff();
+
+  evaluarPermisosBajaStaff();
 }
 
-async function deleteStudentFromServer(id) {
-  if(!confirm("¿Confirmás el trámite de baja definitiva para este alumno? Se archivará con la fecha de hoy.")) return;
-  try {
-    await fetch(`${API_BASE_URL}/students/${id}/baja`, { 
-      method: 'POST', 
-      headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }
-    });
-    alert("La matrícula ha sido dada de baja y trasladada al registro histórico correctamente.");
-    closeProfileModal();
-    fetchStudents();
-  } catch (error) { alert("Error al procesar la baja."); }
-}
-
-async function deleteStaffFromServer(id) {
-  if(!confirm("¿Confirmás la baja de este miembro del personal? Dejará de formar parte del jardín activo.")) return;
-  try {
-    await fetch(`${API_BASE_URL}/institution/staff/${id}/baja`, { 
-      method: 'POST', 
-      headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }
-    });
-    alert("El usuario ha sido desvinculado de la institución activa.");
-    closeProfileModal();
-    fetchStaff();
-  } catch(e) {}
-}
-
-async function deleteTutorFromServer(id) {
-  if(!confirm("¿Desvincular a este adulto responsable? ADVERTENCIA: Si es el único tutor de un alumno, la matrícula del menor será dada de baja automáticamente por seguridad.")) return;
-  try {
-    const response = await fetch(`${API_BASE_URL}/tutors/${id}/baja`, { 
-      method: 'POST', 
-      headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }
-    });
-
-    if(response.ok) {
-      alert("Responsable familiar removido. Se revisaron las matrículas de los menores asociados y se archivaron las bajas correspondientes.");
-      closeProfileModal();
-      refreshAllData(); 
+function evaluarPermisosBajaStaff() {
+  const btnBaja = document.getElementById('btn-baja-staff');
+  if (btnBaja) {
+    if (['DIRECTOR', 'ADMINISTRATIVE'].includes(currentSession.role)) {
+      btnBaja.classList.remove('hidden');
     } else {
-      alert("El servidor rechazó la baja del tutor.");
+      btnBaja.classList.add('hidden');
     }
-  } catch (e) {
-    console.error(e);
   }
 }
 
-function viewStudentProfile(id) {
-  const s = activeStudents.find(item => item.id === id);
-  if(!s) return;
-  const isDirector = currentSession.role === 'DIRECTOR' || currentSession.role === 'ADMINISTRATIVE';
+function calcularTiempoTrabajado(fechaIngresoStr) {
+  if (!fechaIngresoStr) return "Tiempo no especificado (sin fecha de ingreso)";
 
-  const body = `
-    <div><span class="font-bold text-slate-500">DNI:</span> ${s.documentNumber}</div>
-    <div><span class="font-bold text-slate-500">Salita Actual:</span> ${s.classroom}</div>
-    <div><span class="font-bold text-slate-500">Fecha de Nacimiento:</span> ${s.birthDate}</div>
-    <div><span class="font-bold text-slate-500">Dirección Habitacional:</span> ${s.direccion || '--'}</div>
-  `;
+  const fechaIngreso = new Date(fechaIngresoStr);
+  const fechaActual = new Date();
 
-  let actions = `<button onclick="closeProfileModal()" class="px-4 py-2 border rounded-xl text-xs bg-white text-slate-600">Cancelar</button>`;
-  if(isDirector) {
-    actions += `<button onclick="deleteStudentFromServer('${s.id}')" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer"><span class="material-icons-outlined text-sm">remove_circle</span> Dar de Baja (Retirar Matrícula)</button>`;
+  if (isNaN(fechaIngreso.getTime())) return "Fecha de ingreso no disponible";
+
+  let años = fechaActual.getFullYear() - fechaIngreso.getFullYear();
+  let meses = fechaActual.getMonth() - fechaIngreso.getMonth();
+
+  if (meses < 0) {
+    años--;
+    meses += 12;
   }
-  openProfileModal(`${s.lastName}, ${s.firstName}`, "Legajo Digital del Alumno", body, actions);
+
+  if (fechaActual.getDate() < fechaIngreso.getDate()) {
+    meses--;
+    if (meses < 0) {
+      años--;
+      meses += 12;
+    }
+  }
+
+  const totalMeses = (años * 12) + meses;
+
+  if (totalMeses < 12) {
+    return `${totalMeses} ${totalMeses === 1 ? 'mes' : 'meses'} (${totalMeses} meses acumulados para liquidación)`;
+  } else {
+    const restoMeses = meses;
+    const strAños = `${años} ${años === 1 ? 'año' : 'años'}`;
+    const strMeses = restoMeses > 0 ? ` y ${restoMeses} ${restoMeses === 1 ? 'mes' : 'meses'}` : '';
+    return `${strAños}${strMeses} (Total: ${totalMeses} meses de servicio)`;
+  }
 }
 
-function viewTutorProfile(id) {
-  const t = activeTutors.find(item => item.id === id);
-  if(!t) return;
-  const isDirector = currentSession.role === 'DIRECTOR' || currentSession.role === 'ADMINISTRATIVE';
-
-  const body = `
-    <div><span class="font-bold text-slate-500">DNI:</span> ${t.documentNumber}</div>
-    <div><span class="font-bold text-slate-500">Parentesco:</span> ${t.relationship}</div>
-    <div><span class="font-bold text-slate-500">Email:</span> ${t.email || '--'}</div>
-    <div><span class="font-bold text-slate-500">Teléfono:</span> ${t.phone || '--'}</div>
-  `;
-  
-  let actions = `<button onclick="closeProfileModal()" class="px-4 py-2 border rounded-xl text-xs bg-white text-slate-600">Cerrar</button>`;
-  if(isDirector) {
-    actions += `<button onclick="deleteTutorFromServer('${t.id}')" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer"><span class="material-icons-outlined text-sm">delete</span> Dar de Baja</button>`;
+async function confirmarBajaStaff() {
+  if (!currentStaffData || !currentStaffData.id) {
+    alert("No se pudo identificar la ficha del personal a dar de baja.");
+    return;
   }
-  openProfileModal(`${t.lastName}, ${t.firstName}`, "Legajo del Adulto", body, actions);
+
+  const nombreCompleto = `${currentStaffData.firstName || ''} ${currentStaffData.lastName || ''}`.trim();
+  const fechaIngreso = currentStaffData.hireDate;
+
+  const tiempoTrabajado = calcularTiempoTrabajado(fechaIngreso);
+
+  const confirmacion = confirm(
+      `¿Estás seguro de que deseas dar de baja a "${nombreCompleto}"?\n\n` +
+      `📋 Antigüedad registrada: ${tiempoTrabajado}\n` +
+      `Fecha de ingreso: ${fechaIngreso || 'No registrada'}\n\n` +
+      `Presiona Aceptar para procesar la baja.`
+  );
+
+  if (!confirmacion) return;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/institution/staff/${currentStaffData.id}/baja`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      }
+    });
+
+    if (response.ok || response.status === 200 || response.status === 204) {
+      alert(
+          `✅ El docente/personal "${nombreCompleto}" fue dado de baja y movido al registro histórico.\n\n` +
+          `📊 RESUMEN PARA CÁLCULOS ECONÓMICOS / LIQUIDACIÓN:\n` +
+          `• Empleado: ${nombreCompleto}\n` +
+          `• Tiempo trabajado: ${tiempoTrabajado}\n` +
+          `• Fecha de ingreso: ${fechaIngreso || 'N/D'}\n` +
+          `• Fecha de egreso: ${new Date().toLocaleDateString('es-AR')}`
+      );
+
+      hideStaffProfile();
+      await fetchStaff();
+    } else {
+      let errText = "Error desconocido";
+      try {
+        const errorJson = await response.json();
+        errText = errorJson.message || errText;
+      } catch (e) {
+        errText = await response.text();
+      }
+
+      alert(`No se pudo procesar la baja (${response.status}): ${errText}`);
+    }
+
+  } catch (error) {
+    console.error("Error al procesar baja de personal:", error);
+    alert("Hubo un fallo de red o conexión al intentar procesar la baja.");
+  }
+}
+
+window.setDocenteData = function(data) {
+  if (!data) return;
+
+  document.querySelectorAll('.dashboard-view').forEach(v => v.classList.add('hidden'));
+  document.getElementById('staffProfileView').classList.remove('hidden');
+
+  const nombreCompleto = `${data.nombre || ''} ${data.apellido || ''}`.trim() || 'Sin Nombre';
+  document.getElementById('docente-nombre').textContent = nombreCompleto;
+  document.getElementById('docente-avatar').textContent = getInitials(nombreCompleto);
+  document.getElementById('docente-legajo').textContent = `Legajo: ${data.legajo || '-'}`;
+  document.getElementById('docente-cargo').textContent = `Cargo: ${data.cargo || '-'}`;
+  document.getElementById('docente-estado').textContent = `Estado: ${data.estado || 'ACTIVO'}`;
+  document.getElementById('docente-dni').textContent = data.dni || '-';
+  document.getElementById('docente-email').textContent = data.email || '-';
+  document.getElementById('docente-telefono').textContent = data.telefono || '-';
+  document.getElementById('docente-ingreso').textContent = data.fechaIngreso || '-';
+
+  const cursosCont = document.getElementById('cursos-container');
+  cursosCont.innerHTML = '';
+
+  if (data.cursos && data.cursos.length > 0) {
+    data.cursos.forEach(c => {
+      const item = document.createElement('div');
+      item.className = 'course-card bg-slate-50 border border-slate-200 rounded-lg p-3';
+      item.innerHTML = `
+        <h4 class="font-bold text-slate-800 text-sm">${c.nombre}</h4>
+        <p class="text-xs text-slate-500 mt-1">${c.turno} | Alumnos: ${c.cantidadAlumnos}</p>
+        <span class="bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5 rounded mt-2 inline-block">${c.rol}</span>
+      `;
+      cursosCont.appendChild(item);
+    });
+  } else {
+    cursosCont.innerHTML = '<p class="text-xs text-slate-400 col-span-2">No posee asignaturas ni salitas a cargo en el período activo.</p>';
+  }
+};
+
+function hideStaffProfile() {
+  document.getElementById('staffProfileView').classList.add('hidden');
+  document.getElementById('staffView').classList.remove('hidden');
+}
+
+// ========================================================
+// ACCIONES DE PLANILLA Y EDICIÓN DE STAFF
+// ========================================================
+
+function verPlanillaClasesDocente() {
+  if (!currentStaffData) return;
+
+  const nombre = `${currentStaffData.firstName || ''} ${currentStaffData.lastName || ''}`.trim();
+  const salita = currentStaffData.classroom || 'Sin salita asignada';
+  const cantAlumnos = activeStudents.filter(s => s.classroom === currentStaffData.classroom).length;
+
+  document.getElementById('planilla-docente-nombre').textContent = nombre;
+  document.getElementById('planilla-salita-nombre').textContent = `Salita: ${salita}`;
+  document.getElementById('planilla-cant-alumnos').textContent = cantAlumnos;
+
+  document.getElementById('planillaModal').classList.remove('hidden');
+}
+
+function cerrarModalPlanilla() {
+  document.getElementById('planillaModal').classList.add('hidden');
+}
+
+function abrirModalEdicionStaff() {
+  if (!currentStaffData) return;
+
+  document.getElementById('edit-staff-nombre').value = currentStaffData.firstName || '';
+  document.getElementById('edit-staff-apellido').value = currentStaffData.lastName || '';
+  document.getElementById('edit-staff-email').value = currentStaffData.email || '';
+  document.getElementById('edit-staff-role').value = currentStaffData.role || 'TEACHER';
+  document.getElementById('edit-staff-classroom').value = currentStaffData.classroom || 'Maternal';
+
+  handleStaffRoleFormChange(currentStaffData.role || 'TEACHER', 'editStaffClassroomBlock');
+
+  document.getElementById('staffEditModal').classList.remove('hidden');
+}
+
+function cerrarModalEdicionStaff() {
+  document.getElementById('staffEditModal').classList.add('hidden');
+}
+
+async function guardarDatosStaff(e) {
+  e.preventDefault();
+  if (!currentStaffData || !currentStaffData.id) return;
+
+  const role = document.getElementById('edit-staff-role').value;
+  const updatedPayload = {
+    firstName: document.getElementById('edit-staff-nombre').value.trim(),
+    lastName: document.getElementById('edit-staff-apellido').value.trim(),
+    email: document.getElementById('edit-staff-email').value.trim(),
+    role: role,
+    classroom: role === 'TEACHER' ? document.getElementById('edit-staff-classroom').value : null
+  };
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/institution/staff/${currentStaffData.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      },
+      body: JSON.stringify(updatedPayload)
+    });
+
+    if (!response.ok) throw new Error("Error al actualizar los datos en el servidor");
+
+    const usuarioActualizado = await response.json();
+    alert("¡Legajo del docente/personal actualizado con éxito!");
+
+    currentStaffData = usuarioActualizado;
+    cerrarModalEdicionStaff();
+
+    await fetchStaff();
+    viewStaffProfile(usuarioActualizado.id);
+
+  } catch (error) {
+    console.error("Error al actualizar legajo de personal:", error);
+    alert("No se pudo actualizar el legajo. Revisa la conexión con el servidor.");
+  }
 }

@@ -19,7 +19,7 @@ import java.util.UUID; // 🟢 Añadimos el import explícito para estar seguros
 @CrossOrigin(origins = "*", allowedHeaders = "*")
 @RestController
 @RequestMapping("/api/v1/institution/staff")
-public class StaffController {
+public class    StaffController {
 
     private final UserJpaRepository userRepository;
 

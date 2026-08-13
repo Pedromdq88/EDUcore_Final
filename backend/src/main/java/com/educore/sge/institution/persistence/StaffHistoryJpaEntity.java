@@ -15,7 +15,7 @@ public class StaffHistoryJpaEntity {
     private String email;
     private String role;
     private String classroom;
-    private LocalDate hireDate;
+    private LocalDate hireDate; ///Fecha de contratacion
 
     private LocalDate fechaBaja;
 

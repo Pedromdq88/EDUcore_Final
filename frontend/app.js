@@ -363,7 +363,74 @@ function filterStudentsTable() {
   if(target === 'TODAS') { renderStudentsTable(activeStudents); }
   else { renderStudentsTable(activeStudents.filter(s => s.classroom === target)); }
 }
+// Variable global para almacenar el alumno en edición actual
+let currentStudentData = null;
 
+// Abrir el modal de edición de alumno
+function openEditStudentModal() {
+  const legajoText = document.getElementById('alumno-legajo')?.textContent || '';
+  const studentId = legajoText.replace('Legajo: ', '').trim();
+
+  currentStudentData = activeStudents.find(s => s.id === studentId);
+  if (!currentStudentData) {
+    alert("No se pudo cargar la información del alumno para editar.");
+    return;
+  }
+
+  document.getElementById('edit-student-nombre').value = currentStudentData.firstName || '';
+  document.getElementById('edit-student-apellido').value = currentStudentData.lastName || '';
+  document.getElementById('edit-student-dni').value = currentStudentData.documentNumber || '';
+  document.getElementById('edit-student-nacimiento').value = currentStudentData.birthDate || '';
+  document.getElementById('edit-student-classroom').value = currentStudentData.classroom || 'Maternal';
+  document.getElementById('edit-student-direccion').value = currentStudentData.direccion || '';
+
+  document.getElementById('studentEditModal').classList.remove('hidden');
+}
+
+// Cerrar el modal de edición de alumno
+function closeEditStudentModal() {
+  document.getElementById('studentEditModal').classList.add('hidden');
+}
+
+// Guardar los cambios del alumno enviando la petición PUT al backend
+async function guardarDatosAlumno(e) {
+  e.preventDefault();
+  if (!currentStudentData || !currentStudentData.id) return;
+
+  const updatedPayload = {
+    ...currentStudentData,
+    firstName: document.getElementById('edit-student-nombre').value.trim(),
+    lastName: document.getElementById('edit-student-apellido').value.trim(),
+    documentNumber: document.getElementById('edit-student-dni').value.trim(),
+    birthDate: document.getElementById('edit-student-nacimiento').value,
+    classroom: document.getElementById('edit-student-classroom').value,
+    direccion: document.getElementById('edit-student-direccion').value.trim()
+  };
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/students/${currentStudentData.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      },
+      body: JSON.stringify(updatedPayload)
+    });
+
+    if (!response.ok) throw new Error("Error al actualizar la ficha del alumno en el servidor");
+
+    alert("¡Ficha del alumno actualizada con éxito!");
+    closeEditStudentModal();
+
+    await fetchStudents();
+    await showStudentProfile(currentStudentData.id);
+
+  } catch (error) {
+    console.error("Error al actualizar alumno:", error);
+    alert("No se pudieron guardar los cambios. Revisa la conexión con el servidor.");
+  }
+}
 async function showStudentProfile(studentId) {
   try {
     const response = await fetch(`${API_BASE_URL}/students/${studentId}`, {

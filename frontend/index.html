@@ -558,7 +558,55 @@
   </div>
 </div>
 
-<!-- SCRIPT PRINCIPAL DEL SISTEMA (AL FINAL DEL BODY) -->
+<!-- MODAL: EDICIÓN DE ALUMNO -->
+<div id="studentEditModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-100">
+    <div class="p-4 bg-emerald-700 text-white flex justify-between items-center">
+      <h3 class="font-bold text-base flex items-center gap-2">
+        <span class="material-icons-outlined">edit</span>
+        Editar Ficha del Alumno
+      </h3>
+      <button onclick="closeEditStudentModal()" class="text-white/80 hover:text-white cursor-pointer"><span class="material-icons-outlined">close</span></button>
+    </div>
+    <form id="formStudentEdit" onsubmit="guardarDatosAlumno(event)" class="p-6 space-y-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-semibold">
+        <div>
+          <label class="block mb-1 text-slate-600">Nombre/s</label>
+          <input type="text" id="edit-student-nombre" required class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
+        </div>
+        <div>
+          <label class="block mb-1 text-slate-600">Apellido/s</label>
+          <input type="text" id="edit-student-apellido" required class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
+        </div>
+        <div>
+          <label class="block mb-1 text-slate-600">DNI / Documento</label>
+          <input type="text" id="edit-student-dni" required class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
+        </div>
+        <div>
+          <label class="block mb-1 text-slate-600">Fecha de Nacimiento</label>
+          <input type="date" id="edit-student-nacimiento" required class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
+        </div>
+        <div>
+          <label class="block mb-1 text-slate-600">Salita Pedagógica</label>
+          <select id="edit-student-classroom" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-medium">
+            <option value="Maternal">Maternal</option>
+            <option value="Sala de 2 y 3">Sala de 2 y 3</option>
+            <option value="Sala de 4">Sala de 4</option>
+            <option value="Sala de 5">Sala de 5</option>
+          </select>
+        </div>
+        <div>
+          <label class="block mb-1 text-slate-600">Domicilio Familiar</label>
+          <input type="text" id="edit-student-direccion" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-4 border-t border-slate-100">
+        <button type="button" onclick="closeEditStudentModal()" class="px-4 py-2 border border-slate-200 rounded-lg text-xs font-semibold cursor-pointer">Cancelar</button>
+        <button type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 cursor-pointer">Guardar Cambios</button>
+      </div>
+    </form>
+  </div>
+</div>
 <script src="app.js"></script>
 </body>
 </html>

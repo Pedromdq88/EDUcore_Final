@@ -4,8 +4,10 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.Data;
 
 @Entity
+@Data
 @Table(name = "tenants")
 public class InstitutionJpaEntity {
 
@@ -50,9 +52,33 @@ public class InstitutionJpaEntity {
     @Column(name = "cuit")
     private String cuit;
 
+    // ---- CORREOS INSTITUCIONALES PARA EL MÓDULO ARANCELARIO ----
+    @Column(name = "receipt_email")
+    private String receiptEmail = "administracion@onceunidos.com";
+
+    @Column(name = "fee_query_email")
+    private String feeQueryEmail = "tesoreria@onceunidos.com";
+
     public InstitutionJpaEntity() {}
 
-    // Getters y Setters
+    // Getters y Setters de los correos arancelarios
+    public String getReceiptEmail() {
+        return receiptEmail;
+    }
+
+    public void setReceiptEmail(String receiptEmail) {
+        this.receiptEmail = receiptEmail;
+    }
+
+    public String getFeeQueryEmail() {
+        return feeQueryEmail;
+    }
+
+    public void setFeeQueryEmail(String feeQueryEmail) {
+        this.feeQueryEmail = feeQueryEmail;
+    }
+
+    // Demás Getters y Setters
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
 

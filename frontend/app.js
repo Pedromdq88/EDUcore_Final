@@ -7,7 +7,13 @@ let activeStaff = [];
 
 let currentTutorData = null;
 let currentStaffData = null;
-let currentEditingStudentId = null;
+let currentStudentData = null;
+
+// Variables Globales del Módulo de Cuotas
+let selectedStudentForCuotas = null;
+let studentFeesList = [];
+let currentReceiptEmail = null;
+let currentQueryEmail = null;
 
 // ========================================================
 // AUTENTICACIÓN Y NAVEGACIÓN
@@ -41,10 +47,17 @@ function handleLogout() { location.reload(); }
 
 function showSection(sectionId) {
   document.querySelectorAll('.dashboard-view').forEach(v => v.classList.add('hidden'));
-  document.getElementById(sectionId).classList.remove('hidden');
+
+  const targetView = document.getElementById(sectionId);
+  if (targetView) targetView.classList.remove('hidden');
+
   document.querySelectorAll('aside nav button').forEach(b => b.classList.remove('bg-emerald-50', 'text-emerald-700'));
   const btn = document.getElementById(`nav-${sectionId}`);
   if (btn) btn.classList.add('bg-emerald-50', 'text-emerald-700');
+
+  if (sectionId === 'cuotasView') {
+    renderCuotasView();
+  }
 }
 
 function toggleForm(id) { document.getElementById(id).classList.toggle('hidden'); }
@@ -363,10 +376,7 @@ function filterStudentsTable() {
   if(target === 'TODAS') { renderStudentsTable(activeStudents); }
   else { renderStudentsTable(activeStudents.filter(s => s.classroom === target)); }
 }
-// Variable global para almacenar el alumno en edición actual
-let currentStudentData = null;
 
-// Abrir el modal de edición de alumno
 function openEditStudentModal() {
   const legajoText = document.getElementById('alumno-legajo')?.textContent || '';
   const studentId = legajoText.replace('Legajo: ', '').trim();
@@ -387,12 +397,10 @@ function openEditStudentModal() {
   document.getElementById('studentEditModal').classList.remove('hidden');
 }
 
-// Cerrar el modal de edición de alumno
 function closeEditStudentModal() {
   document.getElementById('studentEditModal').classList.add('hidden');
 }
 
-// Guardar los cambios del alumno enviando la petición PUT al backend
 async function guardarDatosAlumno(e) {
   e.preventDefault();
   if (!currentStudentData || !currentStudentData.id) return;
@@ -431,6 +439,7 @@ async function guardarDatosAlumno(e) {
     alert("No se pudieron guardar los cambios. Revisa la conexión con el servidor.");
   }
 }
+
 async function showStudentProfile(studentId) {
   try {
     const response = await fetch(`${API_BASE_URL}/students/${studentId}`, {
@@ -1027,5 +1036,329 @@ async function guardarDatosStaff(e) {
   } catch (error) {
     console.error("Error al actualizar legajo de personal:", error);
     alert("No se pudo actualizar el legajo. Revisa la conexión con el servidor.");
+  }
+}
+
+// ========================================================
+// MÓDULO DE GESTIÓN DE CUOTAS (LISTADO GENERAL, DETALLE Y BACKEND)
+// ========================================================
+
+const ARANCELES_CICLO_LECTIVO = [
+  { id: 0, nombre: 'Matrícula', key: 'MATRICULA' },
+  { id: 3, nombre: 'Marzo', key: 'MARZO' },
+  { id: 4, nombre: 'Abril', key: 'ABRIL' },
+  { id: 5, nombre: 'Mayo', key: 'MAYO' },
+  { id: 6, nombre: 'Junio', key: 'JUNIO' },
+  { id: 7, nombre: 'Julio', key: 'JULIO' },
+  { id: 8, nombre: 'Agosto', key: 'AGOSTO' },
+  { id: 9, nombre: 'Septiembre', key: 'SEPTIEMBRE' },
+  { id: 10, nombre: 'Octubre', key: 'OCTUBRE' },
+  { id: 11, nombre: 'Noviembre', key: 'NOVIEMBRE' },
+  { id: 12, nombre: 'Diciembre', key: 'DICIEMBRE' }
+];
+
+let isEditingCuotas = false;
+let tempFeesState = {};
+let institutionalEmails = {
+  receiptEmail: 'administracion@onceunidos.com',
+  feeQueryEmail: 'tesoreria@onceunidos.com'
+};
+
+// Carga inicial al ingresar a la sección Cuotas desde el menú
+async function renderCuotasView() {
+  await fetchInstitutionalEmails();
+  volverAListaCuotas();
+  filterCuotasTable();
+}
+
+// 1. Obtener correos institucionales desde el endpoint de institutions
+async function fetchInstitutionalEmails() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/institutions/settings/emails`, {
+      headers: {
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      }
+    });
+    if (res.ok) {
+      institutionalEmails = await res.json();
+    }
+  } catch (e) {
+    console.error("Error cargando emails institucionales:", e);
+  }
+}
+
+// 2. Renderizar tabla con listado general, buscador y filtros por sala
+function filterCuotasTable() {
+  const tbody = document.getElementById('cuotasTableBody');
+  if (!tbody) return;
+
+  const filterClassroom = document.getElementById('filterCuotasClassroom')?.value || 'TODAS';
+  const query = (document.getElementById('inputFilterCuotasStudents')?.value || '').trim().toLowerCase();
+  const role = currentSession.role;
+
+  let list = activeStudents;
+  if (role === 'TUTOR') {
+    list = activeStudents.filter(s => {
+      if (s.tutors && s.tutors.some(t => t.email === currentSession.email)) return true;
+      return s.tutorEmail === currentSession.email;
+    });
+  }
+
+  const filtered = list.filter(s => {
+    const matchClass = (filterClassroom === 'TODAS' || s.classroom === filterClassroom);
+    const nom = `${s.firstName || ''} ${s.lastName || ''}`.toLowerCase();
+    const ape = `${s.lastName || ''} ${s.firstName || ''}`.toLowerCase();
+    const dni = (s.documentNumber || '').toLowerCase();
+    const legajo = (s.id || '').toLowerCase();
+    const matchQuery = !query || nom.includes(query) || ape.includes(query) || dni.includes(query) || legajo.includes(query);
+    return matchClass && matchQuery;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400 text-xs">No se encontraron alumnos registrados.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(s => `
+    <tr class="hover:bg-slate-50/80 transition-colors">
+      <td class="p-3.5 font-semibold text-slate-900">${s.lastName || ''}, ${s.firstName || ''}</td>
+      <td class="p-3.5 text-slate-600 font-medium">${s.documentNumber || '--'}</td>
+      <td class="p-3.5"><span class="bg-blue-50 text-blue-700 text-xs font-bold px-2.5 py-0.5 rounded-full">${s.classroom || 'Sin asignar'}</span></td>
+      <td class="p-3.5 text-center">
+        <button onclick="abrirDetalleCuotas('${s.id}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-bold text-xs cursor-pointer transition-all flex items-center gap-1 mx-auto">
+          <span class="material-icons-outlined text-sm">payments</span>
+          <span>Ver Cuotas</span>
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// 3. Abrir la ficha individual de cuotas del alumno
+async function abrirDetalleCuotas(studentId) {
+  selectedStudentForCuotas = studentId;
+  const alumno = activeStudents.find(s => s.id === studentId);
+  if (!alumno) return;
+
+  document.getElementById('cuotasListView').classList.add('hidden');
+  document.getElementById('cuotasDetailView').classList.remove('hidden');
+
+  document.getElementById('cuotasAlumnoNombre').textContent = `${alumno.lastName || ''}, ${alumno.firstName || ''}`;
+  document.getElementById('cuotasAlumnoDni').textContent = alumno.documentNumber || '-';
+  document.getElementById('cuotasAlumnoLegajoSala').textContent = `Legajo: ${alumno.id ? alumno.id.substring(0, 8) : '-'} | Salita: ${alumno.classroom || '-'}`;
+
+  const esAdmin = (currentSession.role === 'DIRECTOR' || currentSession.role === 'ADMINISTRATIVE');
+  document.getElementById('cuotasEditActionContainer').classList.toggle('hidden', !esAdmin);
+  document.getElementById('btnEditarMailComprobante').style.display = esAdmin ? 'inline-block' : 'none';
+  document.getElementById('btnEditarMailConsulta').style.display = esAdmin ? 'inline-block' : 'none';
+
+  // Configuración de enlaces directos a Gmail
+  const mailCompEl = document.getElementById('linkMailComprobante');
+  const mailConsEl = document.getElementById('linkMailConsulta');
+
+  mailCompEl.textContent = institutionalEmails.receiptEmail || 'No configurado';
+  mailCompEl.href = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(institutionalEmails.receiptEmail || '')}&su=${encodeURIComponent(`Comprobante de Pago - ${alumno.lastName}, ${alumno.firstName}`)}`;
+
+  mailConsEl.textContent = institutionalEmails.feeQueryEmail || 'No configurado';
+  mailConsEl.href = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(institutionalEmails.feeQueryEmail || '')}&su=${encodeURIComponent(`Consulta Aranceles - ${alumno.lastName}, ${alumno.firstName}`)}`;
+
+  isEditingCuotas = false;
+  await fetchStudentFees(studentId);
+  tempFeesState = {};
+  studentFeesList.forEach(f => {
+    tempFeesState[f.monthNumber] = (f.status === 'PAID');
+  });
+
+  dibujarCasillerosCuotas();
+}
+
+function volverAListaCuotas() {
+  selectedStudentForCuotas = null;
+  isEditingCuotas = false;
+  document.getElementById('cuotasDetailView').classList.add('hidden');
+  document.getElementById('cuotasListView').classList.remove('hidden');
+}
+
+// 4. Traer cuotas del backend
+async function fetchStudentFees(studentId) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/students/${studentId}/fees?academicYear=2026`, {
+      headers: {
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      }
+    });
+    studentFeesList = res.ok ? await res.json() : [];
+  } catch (e) {
+    console.error("Error al consultar aranceles del backend:", e);
+    studentFeesList = [];
+  }
+}
+
+// 5. Dibujar los 11 casilleros con su estado
+function dibujarCasillerosCuotas() {
+  const container = document.getElementById('mesesCuotasContainer');
+  if (!container) return;
+
+  const mesActual = new Date().getMonth() + 1;
+
+  container.innerHTML = ARANCELES_CICLO_LECTIVO.map(m => {
+    const isPaid = tempFeesState[m.id] === true;
+    let estiloBorde = 'border-slate-800 bg-slate-50 text-slate-500';
+    let icono = '-';
+    let textoEstado = 'Inactivo';
+
+    if (isPaid) {
+      estiloBorde = 'border-emerald-600 bg-emerald-50 text-emerald-700';
+      icono = '✓';
+      textoEstado = 'Abonado';
+    } else {
+      if (m.id === 0 || m.id <= mesActual) {
+        estiloBorde = 'border-rose-600 bg-rose-50 text-rose-700';
+        icono = '!';
+        textoEstado = 'Pendiente';
+      }
+    }
+
+    const cursorStyle = isEditingCuotas ? 'cursor-pointer hover:scale-105 hover:ring-2 hover:ring-emerald-500 shadow-xs' : 'cursor-default opacity-90';
+
+    return `
+      <div onclick="${isEditingCuotas ? `clickCasilleroEdicion(${m.id})` : ''}" 
+           class="p-2.5 rounded-xl border-2 ${estiloBorde} ${cursorStyle} transition-all flex flex-col items-center justify-between text-center select-none min-h-[96px]">
+        <span class="text-[11px] font-bold text-slate-700 uppercase tracking-tight">${m.nombre}</span>
+        <div class="w-7 h-7 rounded-lg border-2 flex items-center justify-center font-bold text-sm ${estiloBorde}">
+          ${icono}
+        </div>
+        <span class="text-[10px] font-semibold">${textoEstado}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+// 6. Control del Modo Edición
+function habilitarModoEdicionCuotas() {
+  isEditingCuotas = true;
+  document.getElementById('btnHabilitarEdicionCuotas').classList.add('hidden');
+  document.getElementById('btnGuardarEdicionCuotas').classList.remove('hidden');
+  document.getElementById('btnCancelarEdicionCuotas').classList.remove('hidden');
+  document.getElementById('badgeModoEdicion').classList.remove('hidden');
+  dibujarCasillerosCuotas();
+}
+
+function cancelarModoEdicionCuotas() {
+  isEditingCuotas = false;
+  tempFeesState = {};
+  studentFeesList.forEach(f => {
+    tempFeesState[f.monthNumber] = (f.status === 'PAID');
+  });
+  document.getElementById('btnHabilitarEdicionCuotas').classList.remove('hidden');
+  document.getElementById('btnGuardarEdicionCuotas').classList.add('hidden');
+  document.getElementById('btnCancelarEdicionCuotas').classList.add('hidden');
+  document.getElementById('badgeModoEdicion').classList.add('hidden');
+  dibujarCasillerosCuotas();
+}
+
+function clickCasilleroEdicion(mesId) {
+  tempFeesState[mesId] = !tempFeesState[mesId];
+  dibujarCasillerosCuotas();
+}
+
+// 7. Guardar cambios en el backend llamando al toggle individual por cuota modificada
+async function guardarCambiosCuotas() {
+  if (!selectedStudentForCuotas) return;
+
+  try {
+    for (const m of ARANCELES_CICLO_LECTIVO) {
+      const dbFee = studentFeesList.find(f => f.monthNumber === m.id);
+      const isPaidCurrently = dbFee ? (dbFee.status === 'PAID') : false;
+      const willBePaid = tempFeesState[m.id] === true;
+
+      if (isPaidCurrently !== willBePaid) {
+        await fetch(`${API_BASE_URL}/students/${selectedStudentForCuotas}/fees/toggle?academicYear=2026&monthNumber=${m.id}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Institution-Id': currentSession.institutionId,
+            'X-User-Role': currentSession.role
+          }
+        });
+      }
+    }
+
+    alert("¡Cuotas del alumno actualizadas con éxito en la base de datos!");
+    isEditingCuotas = false;
+    document.getElementById('btnHabilitarEdicionCuotas').classList.remove('hidden');
+    document.getElementById('btnGuardarEdicionCuotas').classList.add('hidden');
+    document.getElementById('btnCancelarEdicionCuotas').classList.add('hidden');
+    document.getElementById('badgeModoEdicion').classList.add('hidden');
+
+    await fetchStudentFees(selectedStudentForCuotas);
+    dibujarCasillerosCuotas();
+
+  } catch (error) {
+    console.error("Error al guardar cambios de cuotas:", error);
+    alert("Hubo un problema al guardar las cuotas en el servidor.");
+  }
+}
+
+// 8. Modal y guardado de emails institucionales en la base de datos
+function editarMailCuotas(tipo) {
+  document.getElementById('tipoEmailEditando').value = tipo;
+  const inputEmail = document.getElementById('inputModalEmail');
+  const titulo = document.getElementById('modalEmailTitulo');
+  const label = document.getElementById('lblModalEmail');
+
+  if (tipo === 'comprobante') {
+    titulo.innerHTML = '<span class="material-icons-outlined">receipt</span> Modificar Mail Institucional de Comprobantes';
+    label.textContent = 'Correo Oficial para Recepción de Comprobantes';
+    inputEmail.value = institutionalEmails.receiptEmail || '';
+  } else {
+    titulo.innerHTML = '<span class="material-icons-outlined">mail</span> Modificar Mail Institucional de Consultas';
+    label.textContent = 'Correo Oficial para Consultas de Aranceles';
+    inputEmail.value = institutionalEmails.feeQueryEmail || '';
+  }
+
+  document.getElementById('cuotasEmailModal').classList.remove('hidden');
+}
+
+function cerrarModalEmailCuotas() {
+  document.getElementById('cuotasEmailModal').classList.add('hidden');
+}
+
+async function guardarEmailCuotas(e) {
+  e.preventDefault();
+  const tipo = document.getElementById('tipoEmailEditando').value;
+  const nuevoMail = document.getElementById('inputModalEmail').value.trim();
+
+  const payload = {
+    receiptEmail: tipo === 'comprobante' ? nuevoMail : institutionalEmails.receiptEmail,
+    feeQueryEmail: tipo === 'consulta' ? nuevoMail : institutionalEmails.feeQueryEmail
+  };
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/institutions/settings/emails`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      alert("¡Correo institucional actualizado en la base de datos para toda la institución!");
+      institutionalEmails = payload;
+      cerrarModalEmailCuotas();
+      if (selectedStudentForCuotas) {
+        abrirDetalleCuotas(selectedStudentForCuotas);
+      }
+    } else {
+      alert("No se pudo actualizar el correo en el servidor.");
+    }
+  } catch (error) {
+    console.error("Error al guardar email:", error);
+    alert("Error de conexión con el servidor.");
   }
 }

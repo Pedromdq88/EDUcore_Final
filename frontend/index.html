@@ -73,6 +73,9 @@
       <button onclick="showSection('staffView')" id="nav-staffView" class="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl text-sm font-medium text-left cursor-pointer">
         <span class="material-icons-outlined">badge</span><span>Gestión de Personal</span>
       </button>
+      <button onclick="showSection('cuotasView')" id="nav-cuotasView" class="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl text-sm font-medium text-left cursor-pointer">
+        <span class="material-icons-outlined">payments</span><span>Gestión de Cuotas</span>
+      </button>
     </nav>
   </aside>
 
@@ -354,18 +357,15 @@
             </button>
 
             <div class="flex items-center gap-2">
-              <!-- BOTÓN DE BAJA DE PERSONAL -->
               <button id="btn-baja-staff" onclick="confirmarBajaStaff()" class="hidden bg-rose-50 border border-rose-200 text-rose-700 px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-rose-100 cursor-pointer transition-colors">
                 Dar de Baja Personal
               </button>
 
-              <!-- BOTÓN PLANILLA DE CLASES -->
               <button onclick="verPlanillaClasesDocente()" class="btn-action-secondary flex items-center gap-1 bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-slate-50 cursor-pointer">
                 <span class="material-icons-outlined text-base">assignment</span>
                 Planilla de Clases
               </button>
 
-              <!-- BOTÓN EDITAR LEGAJO -->
               <button onclick="abrirModalEdicionStaff()" class="btn-action flex items-center gap-1 bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-emerald-700 cursor-pointer">
                 <span class="material-icons-outlined text-base">edit</span>
                 Editar Legajo Docente
@@ -406,7 +406,150 @@
         </div>
       </div>
 
-    </div>
+      <!-- SECCIÓN: GESTIÓN DE CUOTAS Y ARANCELES -->
+      <div id="cuotasView" class="dashboard-view hidden">
+
+        <!-- VISTA 1: LISTADO GENERAL CON FILTRO Y BUSCADOR -->
+        <div id="cuotasListView">
+          <div class="border-b border-slate-200 pb-4 mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 class="text-2xl font-bold text-slate-900">Estado de Cuenta y Cuotas</h2>
+              <p class="text-xs text-slate-500 mt-0.5">Control de aranceles y seguimiento del ciclo lectivo 2026</p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+              <select id="filterCuotasClassroom" onchange="filterCuotasTable()" class="p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-700 focus:outline-none shadow-xs">
+                <option value="TODAS">Todas las Salitas</option>
+                <option value="Maternal">Maternal</option>
+                <option value="Sala de 2 y 3">Sala de 2 y 3</option>
+                <option value="Sala de 4">Sala de 4</option>
+                <option value="Sala de 5">Sala de 5</option>
+              </select>
+
+              <div class="relative w-full sm:w-72">
+                <span class="material-icons-outlined absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+                <input type="text" id="inputFilterCuotasStudents" oninput="filterCuotasTable()" placeholder="Buscar por Nombre, DNI o Legajo..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-600 shadow-xs">
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+            <table class="w-full text-left border-collapse">
+              <thead>
+              <tr class="bg-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <th class="p-3.5">Estudiante</th>
+                <th class="p-3.5">DNI / Documento</th>
+                <th class="p-3.5">Salita</th>
+                <th class="p-3.5 text-center">Acción</th>
+              </tr>
+              </thead>
+              <tbody id="cuotasTableBody" class="divide-y divide-slate-100 text-xs text-slate-700"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- VISTA 2: DETALLE INDIVIDUAL DEL ALUMNO -->
+        <div id="cuotasDetailView" class="hidden space-y-6">
+          <div class="flex justify-between items-center">
+            <button onclick="volverAListaCuotas()" class="btn-action-secondary flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-xl text-xs font-semibold hover:bg-slate-50 cursor-pointer">
+              <span class="material-icons-outlined text-sm">arrow_back</span>
+              Volver a la Lista de Alumnos
+            </button>
+
+            <div id="cuotasEditActionContainer" class="flex items-center gap-2">
+              <button id="btnHabilitarEdicionCuotas" onclick="habilitarModoEdicionCuotas()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer">
+                <span class="material-icons-outlined text-sm">edit</span>
+                <span>Editar Pagos</span>
+              </button>
+              <button id="btnGuardarEdicionCuotas" onclick="guardarCambiosCuotas()" class="hidden bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer">
+                <span class="material-icons-outlined text-sm">save</span>
+                <span>Guardar Cambios</span>
+              </button>
+              <button id="btnCancelarEdicionCuotas" onclick="cancelarModoEdicionCuotas()" class="hidden bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer">
+                Cancelar
+              </button>
+            </div>
+          </div>
+
+          <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 pb-4 border-b border-slate-100 bg-slate-50 p-4 rounded-xl">
+              <div>
+                <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Estudiante</span>
+                <span id="cuotasAlumnoNombre" class="text-sm font-bold text-slate-900">-</span>
+              </div>
+              <div>
+                <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">DNI / Documento</span>
+                <span id="cuotasAlumnoDni" class="text-xs font-semibold text-slate-700">-</span>
+              </div>
+              <div>
+                <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Legajo / Salita</span>
+                <span id="cuotasAlumnoLegajoSala" class="text-xs font-semibold text-slate-700">-</span>
+              </div>
+              <div class="text-left sm:text-right">
+                <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ciclo Lectivo</span>
+                <span class="text-sm font-bold text-emerald-800">2026</span>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between items-center mb-3">
+                <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Cronograma de Aranceles</h4>
+                <span id="badgeModoEdicion" class="hidden bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-200">
+                  Modo Edición Activo: Haz clic en los casilleros para alternar pago
+                </span>
+              </div>
+              <div id="mesesCuotasContainer" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-11 gap-2"></div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4 border-t border-slate-100 items-start">
+              <div class="lg:col-span-2 space-y-4">
+                <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Canales Institucionales de Contacto</h4>
+                <div class="space-y-3">
+                  <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
+                    <div class="flex justify-between items-center">
+                      <span class="text-xs font-bold text-slate-800">Correo Institucional de Comprobantes</span>
+                      <button id="btnEditarMailComprobante" onclick="editarMailCuotas('comprobante')" class="text-[11px] text-emerald-700 hover:underline font-semibold cursor-pointer">Modificar</button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="material-icons-outlined text-slate-400 text-sm">mail</span>
+                      <a id="linkMailComprobante" href="#" target="_blank" class="text-xs font-semibold text-emerald-800 hover:text-emerald-950 underline cursor-pointer">-</a>
+                    </div>
+                  </div>
+
+                  <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
+                    <div class="flex justify-between items-center">
+                      <span class="text-xs font-bold text-slate-800">Correo Institucional de Administración / Aranceles</span>
+                      <button id="btnEditarMailConsulta" onclick="editarMailCuotas('consulta')" class="text-[11px] text-emerald-700 hover:underline font-semibold cursor-pointer">Modificar</button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="material-icons-outlined text-slate-400 text-sm">send</span>
+                      <a id="linkMailConsulta" href="#" target="_blank" class="text-xs font-semibold text-emerald-800 hover:text-emerald-950 underline cursor-pointer">-</a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bg-slate-50 p-5 rounded-xl border border-slate-100 space-y-3.5">
+                <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Referencia de Estados</h4>
+                <div class="flex items-center gap-3 text-xs font-medium text-slate-700">
+                  <span class="w-5 h-5 rounded border-2 border-emerald-600 bg-emerald-50 flex items-center justify-center text-emerald-700 font-bold text-xs">✓</span>
+                  <span>A tiempo / Abonado</span>
+                </div>
+                <div class="flex items-center gap-3 text-xs font-medium text-slate-700">
+                  <span class="w-5 h-5 rounded border-2 border-rose-600 bg-rose-50 flex items-center justify-center text-rose-700 font-bold text-xs">!</span>
+                  <span>Cuota Pendiente / Deuda</span>
+                </div>
+                <div class="flex items-center gap-3 text-xs font-medium text-slate-700">
+                  <span class="w-5 h-5 rounded border-2 border-slate-800 bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs">-</span>
+                  <span>Período Inactivo (No habilitado)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div> <!-- Cierre correcto de max-w-6xl -->
   </main>
 </div>
 
@@ -607,6 +750,31 @@
     </form>
   </div>
 </div>
+
+<!-- MODAL: MODIFICAR CORREOS INSTITUCIONALES -->
+<div id="cuotasEmailModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-100">
+    <div class="p-4 bg-emerald-700 text-white flex justify-between items-center">
+      <h3 id="modalEmailTitulo" class="font-bold text-base flex items-center gap-2">
+        <span class="material-icons-outlined">alternate_email</span>
+        Modificar Correo Institucional
+      </h3>
+      <button onclick="cerrarModalEmailCuotas()" class="text-white/80 hover:text-white cursor-pointer"><span class="material-icons-outlined">close</span></button>
+    </div>
+    <form id="formEmailCuotas" onsubmit="guardarEmailCuotas(event)" class="p-6 space-y-4">
+      <div>
+        <label id="lblModalEmail" class="block mb-1 text-xs font-semibold text-slate-600">Nueva Casilla de Correo</label>
+        <input type="email" id="inputModalEmail" required placeholder="ejemplo@onceunidos.com" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-emerald-600 focus:bg-white">
+      </div>
+      <input type="hidden" id="tipoEmailEditando" value="">
+      <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+        <button type="button" onclick="cerrarModalEmailCuotas()" class="px-4 py-2 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer">Cancelar</button>
+        <button type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 cursor-pointer">Guardar Correo</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>

@@ -76,6 +76,9 @@
       <button onclick="showSection('cuotasView')" id="nav-cuotasView" class="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl text-sm font-medium text-left cursor-pointer">
         <span class="material-icons-outlined">payments</span><span>Gestión de Cuotas</span>
       </button>
+      <button onclick="showSection('retirosView')" id="nav-retirosView" class="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl text-sm font-medium text-left cursor-pointer">
+        <span class="material-icons-outlined">how_to_reg</span><span>Control de Retiros</span>
+      </button>
     </nav>
   </aside>
 
@@ -225,11 +228,25 @@
             </div>
             <div class="list-container" id="tutores-container"></div>
 
-            <div class="section-header flex items-center gap-2 mt-6 mb-3 text-slate-800 border-l-4 border-emerald-600 pl-3">
-              <span class="material-icons-outlined text-emerald-600">directions_car</span>
-              <h3 class="font-bold text-base">Personas Autorizadas para Retiro</h3>
+            <!-- SECCIÓN: PERSONAS AUTORIZADAS PARA RETIRO (ESTILO LISTA COMPACTA COMO TUTORES) -->
+            <div class="flex items-center justify-between mt-6 mb-2 border-l-4 border-emerald-600 pl-3">
+              <div class="flex items-center gap-2 text-slate-800">
+                <span class="material-icons-outlined text-emerald-600">directions_car</span>
+                <h3 class="font-bold text-base">Personas Autorizadas para Retiro</h3>
+              </div>
+              <button onclick="abrirModalNuevoAutorizado()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-xs">
+                <span class="material-icons-outlined text-sm">person_add</span>
+                + Agregar Autorizado
+              </button>
             </div>
-            <div class="pickup-grid" id="autorizados-container"></div>
+
+            <p class="text-[11px] text-slate-400 mb-3 italic">
+              Normativa Art. 154: Toda persona debe ser mayor de 18 años y presentar DNI. Haz clic en una ficha para expandir o editar.
+            </p>
+
+            <div class="space-y-2" id="autorizados-container">
+              <!-- Renderizado de tarjetas horizontales compactas -->
+            </div>
           </div>
         </div>
       </div>
@@ -549,7 +566,63 @@
         </div>
       </div>
 
-    </div> <!-- Cierre correcto de max-w-6xl -->
+      <!-- SECCIÓN: GESTIÓN Y CONTROL DE RETIROS DE ALUMNOS (NUEVO MÓDULO) -->
+      <div id="retirosView" class="dashboard-view hidden">
+        <div class="border-b border-slate-200 pb-4 mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 class="text-2xl font-bold text-slate-900">Control de Retiros de Alumnos</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Planilla oficial de personas autorizadas por los tutores</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <select id="filterRetirosClassroom" onchange="filterRetirosTable()" class="p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-700 focus:outline-none shadow-xs">
+              <option value="TODAS">Todas las Salitas</option>
+              <option value="Maternal">Maternal</option>
+              <option value="Sala de 2 y 3">Sala de 2 y 3</option>
+              <option value="Sala de 4">Sala de 4</option>
+              <option value="Sala de 5">Sala de 5</option>
+            </select>
+
+            <div class="relative w-full sm:w-72">
+              <span class="material-icons-outlined absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+              <input type="text" id="inputFilterRetiros" oninput="filterRetirosTable()" placeholder="Buscar por Alumno, DNI o Legajo..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-600 shadow-xs">
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <!-- PANEL IZQUIERDO: LISTA DE ALUMNOS -->
+          <div class="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+            <div class="bg-slate-100 p-3.5 border-b border-slate-200">
+              <h4 class="text-xs font-bold text-slate-600 uppercase">Seleccionar Alumno</h4>
+            </div>
+            <div id="retirosAlumnosList" class="divide-y divide-slate-100 max-h-[550px] overflow-y-auto">
+              <!-- Renderizado de alumnos -->
+            </div>
+          </div>
+
+          <!-- PANEL DERECHO: AUTORIZADOS DEL ALUMNO SELECCIONADO -->
+          <div class="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
+            <div class="flex flex-wrap justify-between items-center pb-4 border-b border-slate-100 gap-2">
+              <div>
+                <span class="block text-[10px] font-bold text-slate-400 uppercase">Alumno Seleccionado</span>
+                <h3 id="retirosAlumnoNombreHeader" class="text-base font-bold text-slate-800">Seleccione un alumno de la lista</h3>
+                <p id="retirosAlumnoInfoSub" class="text-xs text-slate-500">-</p>
+              </div>
+              <button id="btnAgregarAutorizadoPanel" onclick="abrirModalNuevoAutorizado()" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer">
+                <span class="material-icons-outlined text-sm">person_add</span>
+                + Agregar Autorizado
+              </button>
+            </div>
+
+            <div id="retirosDetalleAutorizados" class="space-y-2.5">
+              <p class="text-xs text-slate-400 p-4 text-center">Haga clic en un alumno de la izquierda para ver y gestionar quiénes pueden retirarlo.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div> <!-- Cierre max-w-6xl -->
   </main>
 </div>
 
@@ -772,6 +845,102 @@
         <button type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 cursor-pointer">Guardar Correo</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- MODAL: AGREGAR / EDITAR PERSONA AUTORIZADA -->
+<div id="authorizedPickupModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+    <div class="p-4 bg-emerald-700 text-white flex justify-between items-center">
+      <h3 id="pickupModalTitulo" class="font-bold text-base flex items-center gap-2">
+        <span class="material-icons-outlined">how_to_reg</span>
+        Persona Autorizada para Retiro
+      </h3>
+      <button type="button" onclick="cerrarModalNuevoAutorizado()" class="text-white/80 hover:text-white cursor-pointer">
+        <span class="material-icons-outlined">close</span>
+      </button>
+    </div>
+
+    <form id="formAuthorizedPickup" onsubmit="guardarPersonaAutorizada(event)" class="p-6 space-y-3.5">
+      <input type="hidden" id="pickupEditId" value="">
+
+      <div>
+        <label class="block mb-1 text-xs font-semibold text-slate-600">Apellido y Nombre Completo *</label>
+        <input type="text" id="pickupFullName" required placeholder="Ej: Pérez María Laura" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-emerald-600 focus:bg-white">
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block mb-1 text-xs font-semibold text-slate-600">DNI / Documento *</label>
+          <input type="text" id="pickupDni" required placeholder="Sin puntos" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-emerald-600 focus:bg-white">
+        </div>
+        <div>
+          <label class="block mb-1 text-xs font-semibold text-slate-600">Fecha de Nacimiento *</label>
+          <input type="date" id="pickupBirthDate" onchange="actualizarEdadVisual()" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-emerald-600 focus:bg-white">
+        </div>
+      </div>
+
+      <!-- Cartel que muestra la edad calculada automáticamente -->
+      <div class="bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 flex justify-between items-center text-xs">
+        <span class="text-slate-500 font-medium">Edad calculada:</span>
+        <span id="labelEdadCalculada" class="font-bold text-slate-400">Seleccione fecha</span>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block mb-1 text-xs font-semibold text-slate-600">Parentesco / Vínculo *</label>
+          <input type="text" id="pickupRelationship" required placeholder="Abuela, Tío, Transporte..." class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-emerald-600 focus:bg-white">
+        </div>
+        <div>
+          <label class="block mb-1 text-xs font-semibold text-slate-600">Teléfono / Celular *</label>
+          <input type="text" id="pickupPhone" required placeholder="223-XXXXXXX" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-emerald-600 focus:bg-white">
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+        <button type="button" onclick="cerrarModalNuevoAutorizado()" class="px-4 py-2 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer">Cancelar</button>
+        <button type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 cursor-pointer">Guardar Registro</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: EXPANDIR DETALLE DE PERSONA AUTORIZADA -->
+<div id="pickupDetailModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+    <div class="p-4 bg-emerald-700 text-white flex justify-between items-center">
+      <h3 class="font-bold text-base flex items-center gap-2">
+        <span class="material-icons-outlined">contact_page</span>
+        Ficha de Autorización de Retiro
+      </h3>
+      <button onclick="cerrarModalDetalleAutorizado()" class="text-white/80 hover:text-white cursor-pointer"><span class="material-icons-outlined">close</span></button>
+    </div>
+    <div class="p-6 space-y-4">
+      <div class="flex items-center gap-3 border-b border-slate-100 pb-3">
+        <div id="detailPickupAvatar" class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-base">--</div>
+        <div>
+          <h4 id="detailPickupName" class="font-bold text-slate-800 text-sm">-</h4>
+          <span id="detailPickupRel" class="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded">-</span>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3 text-xs">
+        <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+          <span class="block text-[10px] font-bold text-slate-400 uppercase">DNI / Documento</span>
+          <span id="detailPickupDni" class="font-semibold text-slate-700">-</span>
+        </div>
+        <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+          <span class="block text-[10px] font-bold text-slate-400 uppercase">Edad</span>
+          <span id="detailPickupAge" class="font-semibold text-slate-700">-</span>
+        </div>
+        <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-100 col-span-2">
+          <span class="block text-[10px] font-bold text-slate-400 uppercase">Teléfono / Celular de Contacto</span>
+          <span id="detailPickupPhone" class="font-semibold text-slate-700">-</span>
+        </div>
+      </div>
+    </div>
+    <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2" id="detailPickupActions">
+      <!-- Acciones dinámicas de edición o eliminación -->
+    </div>
   </div>
 </div>
 

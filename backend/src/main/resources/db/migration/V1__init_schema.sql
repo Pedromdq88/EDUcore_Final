@@ -186,3 +186,22 @@ CREATE TABLE IF NOT EXISTS historial_personal_baja (
     PRIMARY KEY (id),
     INDEX idx_hist_staff_tenant (tenant_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ===================================================================================
+-- TABLA: PERSONAS AUTORIZADAS PARA RETIRO DE ALUMNOS (PLANILLA OFICIAL ART. 154)
+-- ===================================================================================
+
+CREATE TABLE IF NOT EXISTS student_authorized_pickups (
+                                                          id VARCHAR(36) NOT NULL,
+    student_id VARCHAR(36) NOT NULL,
+    full_name VARCHAR(150) NOT NULL,            -- Apellido y Nombre
+    document_number VARCHAR(50) NOT NULL,       -- DNI
+    age INT NOT NULL,                           -- Edad (Mínimo 18 años)
+    relationship VARCHAR(100) NOT NULL,         -- Parentesco con el menor (Abuela, Tío, Transporte, etc.)
+    phone VARCHAR(50) NOT NULL,                 -- Teléfono / Celular de contacto
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    INDEX idx_pickup_student (student_id),
+    CONSTRAINT fk_pickup_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;B DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

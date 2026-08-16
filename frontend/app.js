@@ -9,11 +9,28 @@ let currentTutorData = null;
 let currentStaffData = null;
 let currentStudentData = null;
 
+// 🟢 PILA DE HISTORIAL DE NAVEGACIÓN (Elimina bucles infinitos)
+let navigationHistory = [];
+
+function pushNavigation(viewType, entityId = null) {
+  // Evitar duplicar el tope de la pila
+  const last = navigationHistory[navigationHistory.length - 1];
+  if (!last || last.viewType !== viewType || last.entityId !== entityId) {
+    navigationHistory.push({ viewType, entityId });
+  }
+}
+
 // Variables Globales del Módulo de Cuotas
 let selectedStudentForCuotas = null;
 let studentFeesList = [];
-let currentReceiptEmail = null;
-let currentQueryEmail = null;
+let institutionalEmails = {
+  receiptEmail: 'administracion@onceunidos.com',
+  feeQueryEmail: 'tesoreria@onceunidos.com'
+};
+
+// Variables Globales del Módulo de Retiros
+let selectedStudentForRetiros = null;
+let currentStudentPickups = [];
 
 // ========================================================
 // AUTENTICACIÓN Y NAVEGACIÓN
@@ -45,7 +62,11 @@ function handleLogin() {
 
 function handleLogout() { location.reload(); }
 
-function showSection(sectionId) {
+function showSection(sectionId, clearHistory = true) {
+  if (clearHistory) {
+    navigationHistory = []; // Al usar el menú lateral reseteamos el historial
+  }
+
   document.querySelectorAll('.dashboard-view').forEach(v => v.classList.add('hidden'));
 
   const targetView = document.getElementById(sectionId);
@@ -55,18 +76,17 @@ function showSection(sectionId) {
   const btn = document.getElementById(`nav-${sectionId}`);
   if (btn) btn.classList.add('bg-emerald-50', 'text-emerald-700');
 
-  if (sectionId === 'cuotasView') {
-    renderCuotasView();
-  }
+  if (sectionId === 'cuotasView') renderCuotasView();
+  if (sectionId === 'retirosView') renderRetirosView();
 }
 
 function toggleForm(id) { document.getElementById(id).classList.toggle('hidden'); }
 
 function refreshAllData() { fetchTutors(); fetchStudents(); fetchStaff(); }
 
-function getInitials(str) {
-  if (!str) return '--';
-  return str.split(' ').filter(Boolean).map(n => n[0]).join('').substring(0, 2).toUpperCase() || '--';
+function getInitials(name) {
+  if (!name) return '--';
+  return name.trim().split(/\s+/).slice(0, 2).map(n => n[0].toUpperCase()).join('');
 }
 
 // ========================================================
@@ -87,7 +107,7 @@ async function fetchTutors() {
         <td class="p-3 text-slate-600 font-medium">${t.documentNumber || '--'}</td>
         <td class="p-3"><span class="bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-md">${t.relationship || 'Tutor'}</span></td>
         <td class="p-3 text-center">
-          <button onclick="viewTutorProfile('${t.id}')" class="text-slate-400 hover:text-emerald-600 p-1 rounded-full hover:bg-slate-100">
+          <button onclick="viewTutorProfile('${t.id}')" class="text-slate-400 hover:text-emerald-600 p-1 rounded-full hover:bg-slate-100 cursor-pointer">
             <span class="material-icons-outlined">contact_page</span>
           </button>
         </td>
@@ -124,11 +144,56 @@ async function submitTutor() {
   fetchTutors();
 }
 
-function viewTutorProfile(id) {
+async function viewTutorProfile(id, isBackNavigation = false) {
   const t = activeTutors.find(item => item.id === id);
   if(!t) {
     alert("No se encontraron los datos de este tutor.");
     return;
+  }
+
+  // Si no es volver atrás, apilamos la pantalla actual antes de cambiar
+  if (!isBackNavigation) {
+    if (currentStudentData && !document.getElementById('studentProfileView').classList.contains('hidden')) {
+      pushNavigation('studentProfileView', currentStudentData.id);
+    } else {
+      pushNavigation('tutorsView', null);
+    }
+  }
+
+  let hijosVinculados = activeStudents.filter(s => {
+    if (Array.isArray(s.tutorIds) && s.tutorIds.includes(t.id)) return true;
+    if (Array.isArray(s.tutors) && s.tutors.some(tut => (tut.id === t.id || tut.tutorId === t.id))) return true;
+    if (Array.isArray(s.tutores) && s.tutores.some(tut => (tut.id === t.id || tut.tutorId === t.id))) return true;
+    if (s.tutorId === t.id || s.primaryTutorId === t.id || s.secondaryTutorId === t.id) return true;
+    return false;
+  }).map(s => ({
+    id: s.id,
+    nombre: s.firstName,
+    apellido: s.lastName,
+    curso: s.classroom,
+    parentesco: t.relationship || 'Hijo/a'
+  }));
+
+  if (hijosVinculados.length === 0) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/tutors/${t.id}/students`, {
+        headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }
+      });
+      if (res.ok) {
+        const dataHijos = await res.json();
+        if (Array.isArray(dataHijos) && dataHijos.length > 0) {
+          hijosVinculados = dataHijos.map(s => ({
+            id: s.id,
+            nombre: s.firstName,
+            apellido: s.lastName,
+            curso: s.classroom,
+            parentesco: t.relationship || 'Hijo/a'
+          }));
+        }
+      }
+    } catch (err) {
+      console.warn("No se pudo consultar el endpoint de hijos:", err);
+    }
   }
 
   setTutorData({
@@ -145,13 +210,7 @@ function viewTutorProfile(id) {
     email: t.email || '-',
     conviveEstudiante: t.convive || 'Sí',
     domicilio: t.direccion || '-',
-    hijos: activeStudents.filter(s => s.tutorIds && s.tutorIds.includes(t.id)).map(s => ({
-      id: s.id,
-      nombre: s.firstName,
-      apellido: s.lastName,
-      curso: s.classroom,
-      parentesco: 'Hijo/a'
-    }))
+    hijos: hijosVinculados
   });
 }
 
@@ -202,7 +261,17 @@ function setTutorData(data) {
 
 function hideTutorProfile() {
   document.getElementById('tutorProfileView').classList.add('hidden');
-  showSection('tutorsView');
+
+  const previous = navigationHistory.pop();
+  if (previous) {
+    if (previous.viewType === 'studentProfileView' && previous.entityId) {
+      showStudentProfile(previous.entityId, true);
+    } else {
+      showSection(previous.viewType, false);
+    }
+  } else {
+    showSection('tutorsView', true);
+  }
 }
 
 function evaluarPermisosPerfilTutor() {
@@ -250,6 +319,8 @@ function cerrarModalEdicionTutor() {
 
 async function guardarDatosTutor(e) {
   e.preventDefault();
+  if (!currentTutorData || !currentTutorData.id) return;
+
   const updatedData = {
     ...currentTutorData,
     firstName: document.getElementById('edit-nombre').value.trim(),
@@ -276,17 +347,29 @@ async function guardarDatosTutor(e) {
       body: JSON.stringify(updatedData)
     });
 
+    let finalTutor = updatedData;
     if (response.ok) {
-      alert("¡Datos del tutor actualizados con éxito!");
-      cerrarModalEdicionTutor();
-      fetchTutors();
-    } else {
-      setTutorData(updatedData);
-      cerrarModalEdicionTutor();
+      try {
+        const json = await response.json();
+        if (json && json.id) finalTutor = { ...updatedData, ...json };
+      } catch (_) {}
     }
-  } catch(error) {
-    setTutorData(updatedData);
+
+    const idx = activeTutors.findIndex(t => t.id === currentTutorData.id);
+    if (idx !== -1) {
+      activeTutors[idx] = { ...activeTutors[idx], ...finalTutor };
+    }
+
+
     cerrarModalEdicionTutor();
+
+    setTutorData(finalTutor);
+    await fetchTutors();
+
+  } catch (error) {
+    console.error("Error al actualizar tutor:", error);
+    cerrarModalEdicionTutor();
+    setTutorData(updatedData);
   }
 }
 
@@ -363,7 +446,7 @@ function renderStudentsTable(list) {
       <td class="p-3 text-slate-600 font-medium">${s.documentNumber || '--'}</td>
       <td class="p-3"><span class="bg-blue-50 text-blue-700 text-xs font-bold px-2.5 py-1 rounded-full">${s.classroom || 'Sin asignar'}</span></td>
       <td class="p-3 text-center">
-        <button onclick="showStudentProfile('${s.id}')" class="text-slate-400 hover:text-emerald-600 p-1 rounded-full hover:bg-slate-100">
+        <button onclick="showStudentProfile('${s.id}')" class="text-slate-400 hover:text-emerald-600 p-1 rounded-full hover:bg-slate-100 cursor-pointer">
           <span class="material-icons-outlined">contact_page</span>
         </button>
       </td>
@@ -432,7 +515,7 @@ async function guardarDatosAlumno(e) {
     closeEditStudentModal();
 
     await fetchStudents();
-    await showStudentProfile(currentStudentData.id);
+    await showStudentProfile(currentStudentData.id, true);
 
   } catch (error) {
     console.error("Error al actualizar alumno:", error);
@@ -440,7 +523,7 @@ async function guardarDatosAlumno(e) {
   }
 }
 
-async function showStudentProfile(studentId) {
+async function showStudentProfile(studentId, isBackNavigation = false) {
   try {
     const response = await fetch(`${API_BASE_URL}/students/${studentId}`, {
       headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }
@@ -448,6 +531,17 @@ async function showStudentProfile(studentId) {
 
     if (!response.ok) throw new Error("Error al consultar el perfil");
     const data = await response.json();
+
+    // Si no es volver atrás, apilamos la pantalla actual antes de cambiar
+    if (!isBackNavigation) {
+      if (currentTutorData && !document.getElementById('tutorProfileView').classList.contains('hidden')) {
+        pushNavigation('tutorProfileView', currentTutorData.id);
+      } else {
+        pushNavigation('alumnosView', null);
+      }
+    }
+
+    currentStudentData = data;
 
     document.querySelectorAll('.dashboard-view').forEach(view => view.classList.add('hidden'));
     document.getElementById('studentProfileView').classList.remove('hidden');
@@ -486,7 +580,9 @@ async function showStudentProfile(studentId) {
         const isPrimary = index === 0;
         const card = document.createElement('div');
         card.className = "p-4 bg-white border border-slate-200 rounded-xl shadow-xs hover:border-emerald-500 transition-all cursor-pointer flex justify-between items-center group mb-2";
-        card.onclick = () => viewTutorProfile(t.id || t.tutorId);
+
+        const tutorIdTarget = t.id || t.tutorId;
+        card.onclick = () => viewTutorProfile(tutorIdTarget);
 
         card.innerHTML = `
           <div class="flex items-center gap-3">
@@ -511,6 +607,8 @@ async function showStudentProfile(studentId) {
       tutoresCont.innerHTML = `<p class="text-xs text-slate-400 italic p-3">No hay tutores vinculados a este alumno.</p>`;
     }
 
+    await fetchAndRenderPickupsGeneral(studentId, 'autorizados-container');
+
   } catch (error) {
     console.error("Error al cargar perfil de alumno:", error);
     alert("No se pudo cargar la ficha del alumno.");
@@ -519,8 +617,17 @@ async function showStudentProfile(studentId) {
 
 function hideStudentProfile() {
   document.getElementById('studentProfileView').classList.add('hidden');
-  document.getElementById('alumnosView').classList.remove('hidden');
-  fetchStudents();
+
+  const previous = navigationHistory.pop();
+  if (previous) {
+    if (previous.viewType === 'tutorProfileView' && previous.entityId) {
+      viewTutorProfile(previous.entityId, true);
+    } else {
+      showSection(previous.viewType, false);
+    }
+  } else {
+    showSection('alumnosView', true);
+  }
 }
 
 async function confirmarBajaAlumno() {
@@ -1040,7 +1147,7 @@ async function guardarDatosStaff(e) {
 }
 
 // ========================================================
-// MÓDULO DE GESTIÓN DE CUOTAS (LISTADO GENERAL, DETALLE Y BACKEND)
+// MÓDULO DE GESTIÓN DE CUOTAS
 // ========================================================
 
 const ARANCELES_CICLO_LECTIVO = [
@@ -1059,19 +1166,13 @@ const ARANCELES_CICLO_LECTIVO = [
 
 let isEditingCuotas = false;
 let tempFeesState = {};
-let institutionalEmails = {
-  receiptEmail: 'administracion@onceunidos.com',
-  feeQueryEmail: 'tesoreria@onceunidos.com'
-};
 
-// Carga inicial al ingresar a la sección Cuotas desde el menú
 async function renderCuotasView() {
   await fetchInstitutionalEmails();
   volverAListaCuotas();
   filterCuotasTable();
 }
 
-// 1. Obtener correos institucionales desde el endpoint de institutions
 async function fetchInstitutionalEmails() {
   try {
     const res = await fetch(`${API_BASE_URL}/institutions/settings/emails`, {
@@ -1088,7 +1189,6 @@ async function fetchInstitutionalEmails() {
   }
 }
 
-// 2. Renderizar tabla con listado general, buscador y filtros por sala
 function filterCuotasTable() {
   const tbody = document.getElementById('cuotasTableBody');
   if (!tbody) return;
@@ -1135,7 +1235,6 @@ function filterCuotasTable() {
   `).join('');
 }
 
-// 3. Abrir la ficha individual de cuotas del alumno
 async function abrirDetalleCuotas(studentId) {
   selectedStudentForCuotas = studentId;
   const alumno = activeStudents.find(s => s.id === studentId);
@@ -1153,7 +1252,6 @@ async function abrirDetalleCuotas(studentId) {
   document.getElementById('btnEditarMailComprobante').style.display = esAdmin ? 'inline-block' : 'none';
   document.getElementById('btnEditarMailConsulta').style.display = esAdmin ? 'inline-block' : 'none';
 
-  // Configuración de enlaces directos a Gmail
   const mailCompEl = document.getElementById('linkMailComprobante');
   const mailConsEl = document.getElementById('linkMailConsulta');
 
@@ -1180,7 +1278,6 @@ function volverAListaCuotas() {
   document.getElementById('cuotasListView').classList.remove('hidden');
 }
 
-// 4. Traer cuotas del backend
 async function fetchStudentFees(studentId) {
   try {
     const res = await fetch(`${API_BASE_URL}/students/${studentId}/fees?academicYear=2026`, {
@@ -1196,7 +1293,6 @@ async function fetchStudentFees(studentId) {
   }
 }
 
-// 5. Dibujar los 11 casilleros con su estado
 function dibujarCasillerosCuotas() {
   const container = document.getElementById('mesesCuotasContainer');
   if (!container) return;
@@ -1236,7 +1332,6 @@ function dibujarCasillerosCuotas() {
   }).join('');
 }
 
-// 6. Control del Modo Edición
 function habilitarModoEdicionCuotas() {
   isEditingCuotas = true;
   document.getElementById('btnHabilitarEdicionCuotas').classList.add('hidden');
@@ -1264,7 +1359,6 @@ function clickCasilleroEdicion(mesId) {
   dibujarCasillerosCuotas();
 }
 
-// 7. Guardar cambios en el backend llamando al toggle individual por cuota modificada
 async function guardarCambiosCuotas() {
   if (!selectedStudentForCuotas) return;
 
@@ -1302,7 +1396,6 @@ async function guardarCambiosCuotas() {
   }
 }
 
-// 8. Modal y guardado de emails institucionales en la base de datos
 function editarMailCuotas(tipo) {
   document.getElementById('tipoEmailEditando').value = tipo;
   const inputEmail = document.getElementById('inputModalEmail');
@@ -1348,7 +1441,7 @@ async function guardarEmailCuotas(e) {
     });
 
     if (res.ok) {
-      alert("¡Correo institucional actualizado en la base de datos para toda la institución!");
+      alert("¡Correo institucional actualizado correctamente!");
       institutionalEmails = payload;
       cerrarModalEmailCuotas();
       if (selectedStudentForCuotas) {
@@ -1360,5 +1453,338 @@ async function guardarEmailCuotas(e) {
   } catch (error) {
     console.error("Error al guardar email:", error);
     alert("Error de conexión con el servidor.");
+  }
+}
+
+// ========================================================
+// MÓDULO DE CONTROL DE RETIROS DE ALUMNOS (AUTORIZADOS)
+// ========================================================
+
+function renderRetirosView() {
+  filterRetirosTable();
+}
+
+function filterRetirosTable() {
+  const container = document.getElementById('retirosAlumnosList');
+  if (!container) return;
+
+  const filterClassroom = document.getElementById('filterRetirosClassroom')?.value || 'TODAS';
+  const query = (document.getElementById('inputFilterRetiros')?.value || '').trim().toLowerCase();
+
+  const filtrados = activeStudents.filter(s => {
+    const matchClass = (filterClassroom === 'TODAS' || s.classroom === filterClassroom);
+    const nom = `${s.firstName || ''} ${s.lastName || ''}`.toLowerCase();
+    const ape = `${s.lastName || ''} ${s.firstName || ''}`.toLowerCase();
+    const dni = (s.documentNumber || '').toLowerCase();
+    const legajo = (s.id || '').toLowerCase();
+    return matchClass && (!query || nom.includes(query) || ape.includes(query) || dni.includes(query) || legajo.includes(query));
+  });
+
+  if (filtrados.length === 0) {
+    container.innerHTML = '<p class="text-xs text-slate-400 p-4 text-center">No se encontraron alumnos.</p>';
+    return;
+  }
+
+  container.innerHTML = filtrados.map(s => `
+    <div onclick="seleccionarAlumnoRetiros('${s.id}')" class="p-3 hover:bg-emerald-50/60 cursor-pointer flex justify-between items-center transition-colors ${selectedStudentForRetiros === s.id ? 'bg-emerald-50 border-l-4 border-emerald-600' : ''}">
+      <div>
+        <h4 class="font-bold text-slate-800 text-xs">${s.lastName || ''}, ${s.firstName || ''}</h4>
+        <span class="text-slate-400 text-[11px] block">DNI: ${s.documentNumber || '--'} | ${s.classroom || 'Sin sala'}</span>
+      </div>
+      <span class="material-icons-outlined text-slate-300 text-sm">chevron_right</span>
+    </div>
+  `).join('');
+}
+
+async function seleccionarAlumnoRetiros(studentId) {
+  selectedStudentForRetiros = studentId;
+  const alumno = activeStudents.find(s => s.id === studentId);
+  if (!alumno) return;
+
+  document.getElementById('retirosAlumnoNombreHeader').textContent = `${alumno.lastName || ''}, ${alumno.firstName || ''}`;
+  document.getElementById('retirosAlumnoInfoSub').textContent = `DNI: ${alumno.documentNumber || '--'} | Salita: ${alumno.classroom || '--'} | Legajo: ${alumno.id ? alumno.id.substring(0, 8) : '--'}`;
+  document.getElementById('btnAgregarAutorizadoPanel').classList.remove('hidden');
+
+  filterRetirosTable();
+  await fetchAndRenderPickupsGeneral(studentId, 'retirosDetalleAutorizados');
+}
+
+// Cálculo preciso de edad
+function calcularEdadDesdeFecha(fechaStr) {
+  if (!fechaStr) return null;
+  const hoy = new Date();
+  const cumple = new Date(fechaStr + 'T00:00:00');
+  let edad = hoy.getFullYear() - cumple.getFullYear();
+  const m = hoy.getMonth() - cumple.getMonth();
+  if (m < 0 || (m === 0 && hoy.getDate() < cumple.getDate())) {
+    edad--;
+  }
+  return edad;
+}
+
+function actualizarEdadVisual() {
+  const inputDate = document.getElementById('pickupBirthDate');
+  const lbl = document.getElementById('labelEdadCalculada');
+  if (!inputDate || !lbl) return;
+
+  if (!inputDate.value) {
+    lbl.textContent = "Seleccione fecha";
+    lbl.className = "font-bold text-slate-400";
+    return;
+  }
+
+  const edad = calcularEdadDesdeFecha(inputDate.value);
+  if (edad < 18) {
+    lbl.textContent = `${edad} años (❌ No permitido: Menor de 18)`;
+    lbl.className = "font-bold text-rose-600";
+  } else {
+    lbl.textContent = `${edad} años (✓ Mayor de edad)`;
+    lbl.className = "font-bold text-emerald-700";
+  }
+}
+
+async function fetchAndRenderPickupsGeneral(studentId, targetContainerId) {
+  const container = document.getElementById(targetContainerId);
+  if (!container) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/students/${studentId}/authorized-pickups`, {
+      headers: {
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      }
+    });
+
+    currentStudentPickups = res.ok ? await res.json() : [];
+
+    if (currentStudentPickups.length === 0) {
+      container.innerHTML = `
+        <div class="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">
+          No hay personas autorizadas registradas para este alumno.
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = currentStudentPickups.map(p => `
+      <div onclick="verPerfilAmpliadoAutorizado('${p.id}')" class="p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs hover:border-emerald-500 hover:shadow-sm transition-all flex justify-between items-center cursor-pointer group">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+            ${getInitials(p.fullName)}
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h4 class="font-bold text-slate-900 group-hover:text-emerald-700 text-xs">${p.fullName}</h4>
+              <span class="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-md">${p.relationship}</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-0.5">
+              DNI: ${p.documentNumber} | ${p.age} años | Tel: ${p.phone}
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1">
+          <button onclick="event.stopPropagation(); abrirModalEditarAutorizado('${p.id}')" title="Editar" class="p-1.5 text-slate-400 hover:text-emerald-600 rounded-lg hover:bg-slate-100 cursor-pointer">
+            <span class="material-icons-outlined text-sm">edit</span>
+          </button>
+          <button onclick="event.stopPropagation(); eliminarPersonaAutorizada('${p.id}')" title="Eliminar" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer">
+            <span class="material-icons-outlined text-sm">delete</span>
+          </button>
+        </div>
+      </div>
+    `).join('');
+
+  } catch (error) {
+    console.error("Error al cargar autorizados:", error);
+  }
+}
+
+function verPerfilAmpliadoAutorizado(pickupId) {
+  const p = currentStudentPickups.find(item => item.id === pickupId);
+  if (!p) return;
+
+  document.getElementById('detailPickupAvatar').textContent = getInitials(p.fullName);
+  document.getElementById('detailPickupName').textContent = p.fullName;
+  document.getElementById('detailPickupRel').textContent = p.relationship;
+  document.getElementById('detailPickupDni').textContent = p.documentNumber;
+  document.getElementById('detailPickupAge').textContent = `${p.age} años ${p.birthDate ? '(' + p.birthDate + ')' : ''}`;
+  document.getElementById('detailPickupPhone').textContent = p.phone;
+
+  document.getElementById('detailPickupActions').innerHTML = `
+    <button onclick="cerrarModalDetalleAutorizado(); abrirModalEditarAutorizado('${p.id}')" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 cursor-pointer flex items-center gap-1">
+      <span class="material-icons-outlined text-xs">edit</span>
+      Editar Ficha
+    </button>
+    <button onclick="cerrarModalDetalleAutorizado()" class="px-4 py-2 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer">Cerrar</button>
+  `;
+
+  document.getElementById('pickupDetailModal').classList.remove('hidden');
+}
+
+function cerrarModalDetalleAutorizado() {
+  document.getElementById('pickupDetailModal').classList.add('hidden');
+}
+
+function abrirModalNuevoAutorizado() {
+  const form = document.getElementById('formAuthorizedPickup');
+  if (form) form.reset();
+
+  const editId = document.getElementById('pickupEditId');
+  if (editId) editId.value = '';
+
+  const label = document.getElementById('labelEdadCalculada');
+  if (label) {
+    label.textContent = 'Seleccione fecha';
+    label.className = 'font-bold text-slate-400';
+  }
+
+  const titulo = document.getElementById('pickupModalTitulo');
+  if (titulo) titulo.innerHTML = '<span class="material-icons-outlined">how_to_reg</span> Nueva Persona Autorizada';
+
+  document.getElementById('authorizedPickupModal').classList.remove('hidden');
+}
+
+function abrirModalEditarAutorizado(pickupId) {
+  const p = currentStudentPickups.find(item => item.id === pickupId);
+  if (!p) return;
+
+  document.getElementById('pickupEditId').value = p.id;
+  document.getElementById('pickupFullName').value = p.fullName || '';
+  document.getElementById('pickupDni').value = p.documentNumber || '';
+  document.getElementById('pickupBirthDate').value = p.birthDate || '';
+  document.getElementById('pickupRelationship').value = p.relationship || '';
+  document.getElementById('pickupPhone').value = p.phone || '';
+
+  actualizarEdadVisual();
+
+  const titulo = document.getElementById('pickupModalTitulo');
+  if (titulo) titulo.innerHTML = '<span class="material-icons-outlined">edit</span> Editar Persona Autorizada';
+
+  document.getElementById('authorizedPickupModal').classList.remove('hidden');
+}
+
+function cerrarModalNuevoAutorizado() {
+  document.getElementById('authorizedPickupModal').classList.add('hidden');
+}
+
+async function guardarPersonaAutorizada(e) {
+  e.preventDefault();
+
+  let studentId = selectedStudentForRetiros;
+  if (!studentId) {
+    const legajoElem = document.getElementById('alumno-legajo');
+    if (legajoElem) {
+      studentId = legajoElem.textContent.replace('Legajo: ', '').trim();
+    }
+  }
+
+  if (!studentId || studentId === '-') {
+    alert("No se pudo identificar al alumno.");
+    return;
+  }
+
+  const inputFullName = document.getElementById('pickupFullName');
+  const inputDni = document.getElementById('pickupDni');
+  const inputBirthDate = document.getElementById('pickupBirthDate');
+  const inputRelationship = document.getElementById('pickupRelationship');
+  const inputPhone = document.getElementById('pickupPhone');
+  const inputEditId = document.getElementById('pickupEditId');
+
+  if (!inputFullName || !inputDni || !inputBirthDate || !inputRelationship || !inputPhone) {
+    console.error("Faltan inputs en el modal de autorizado.");
+    return;
+  }
+
+  const birthDateValue = inputBirthDate.value;
+  const edadCalculada = calcularEdadDesdeFecha(birthDateValue);
+
+  if (edadCalculada === null || isNaN(edadCalculada)) {
+    alert("Por favor ingrese una fecha de nacimiento válida.");
+    return;
+  }
+
+  if (edadCalculada < 18) {
+    alert(`La persona autorizada tiene ${edadCalculada} años. Debe ser mayor de 18 años según la normativa (Art. 154).`);
+    return;
+  }
+
+  const editId = inputEditId ? inputEditId.value.trim() : '';
+  const payload = {
+    fullName: inputFullName.value.trim(),
+    documentNumber: inputDni.value.trim(),
+    birthDate: birthDateValue,
+    age: edadCalculada,
+    relationship: inputRelationship.value.trim(),
+    phone: inputPhone.value.trim()
+  };
+
+  try {
+    const url = editId
+        ? `${API_BASE_URL}/students/${studentId}/authorized-pickups/${editId}`
+        : `${API_BASE_URL}/students/${studentId}/authorized-pickups`;
+
+    const method = editId ? 'PUT' : 'POST';
+
+    const res = await fetch(url, {
+      method: method,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      alert("¡Persona autorizada guardada correctamente!");
+      cerrarModalNuevoAutorizado();
+      if (document.getElementById('studentProfileView') && !document.getElementById('studentProfileView').classList.contains('hidden')) {
+        await fetchAndRenderPickupsGeneral(studentId, 'autorizados-container');
+      }
+      if (document.getElementById('retirosView') && !document.getElementById('retirosView').classList.contains('hidden')) {
+        await fetchAndRenderPickupsGeneral(studentId, 'retirosDetalleAutorizados');
+      }
+    } else {
+      const errText = await res.text();
+      alert(`Error al guardar: ${errText}`);
+    }
+  } catch (err) {
+    console.error("Error al guardar persona autorizada:", err);
+    alert("Error de conexión con el servidor.");
+  }
+}
+
+async function eliminarPersonaAutorizada(pickupId) {
+  let studentId = selectedStudentForRetiros;
+  if (!studentId) {
+    const legajoElem = document.getElementById('alumno-legajo');
+    if (legajoElem) {
+      studentId = legajoElem.textContent.replace('Legajo: ', '').trim();
+    }
+  }
+
+  if (!confirm("¿Deseas retirar la autorización de retiro a esta persona?")) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/students/${studentId}/authorized-pickups/${pickupId}`, {
+      method: 'DELETE',
+      headers: {
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      }
+    });
+
+    if (res.ok) {
+      if (document.getElementById('studentProfileView') && !document.getElementById('studentProfileView').classList.contains('hidden')) {
+        await fetchAndRenderPickupsGeneral(studentId, 'autorizados-container');
+      }
+      if (document.getElementById('retirosView') && !document.getElementById('retirosView').classList.contains('hidden')) {
+        await fetchAndRenderPickupsGeneral(studentId, 'retirosDetalleAutorizados');
+      }
+    } else {
+      alert("No se pudo eliminar la autorización.");
+    }
+  } catch (err) {
+    console.error("Error al eliminar autorizado:", err);
   }
 }

@@ -18,8 +18,9 @@ spring:
       hibernate:
         enable_lazy_load_no_trans: true  # 🟢 Formato YAML correcto y alineado
 
-  flyway:
-    enabled: true
+flyway:
+  enabled: true
+  baseline-on-migrate: true
 
 management:
   endpoints:

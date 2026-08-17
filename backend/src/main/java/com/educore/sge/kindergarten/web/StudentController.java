@@ -6,7 +6,6 @@ import com.educore.sge.kindergarten.infrastructure.entity.StudentJpaEntity;
 import com.educore.sge.kindergarten.infrastructure.repository.StudentJpaRepository;
 import com.educore.sge.kindergarten.persistence.StudentHistoryJpaEntity;
 import com.educore.sge.kindergarten.persistence.StudentHistoryRepository;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -16,36 +15,38 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
-@CrossOrigin(origins = "*", allowedHeaders = "*")
+@CrossOrigin(origins = "*", allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
 @RestController
 @RequestMapping("/api/v1/students")
 public class StudentController {
 
     private final StudentJpaRepository repository;
     private final StudentTutorService studentTutorService;
+    private final StudentHistoryRepository studentHistoryRepository;
 
-    @Autowired
-    private StudentHistoryRepository studentHistoryRepository;
-
-    public StudentController(StudentJpaRepository repository, StudentTutorService studentTutorService) {
+    public StudentController(
+            StudentJpaRepository repository,
+            StudentTutorService studentTutorService,
+            StudentHistoryRepository studentHistoryRepository) {
         this.repository = repository;
         this.studentTutorService = studentTutorService;
+        this.studentHistoryRepository = studentHistoryRepository;
     }
 
-    // GET ALL: Obtener todos los alumnos
+    // Obtener todos los alumnos
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TEACHER')")
     @GetMapping
     public List<StudentJpaEntity> getAllStudents() {
         return repository.findAll();
     }
 
+    //  Obtener alumno con carga forzada de tutores
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TEACHER')")
     @GetMapping("/{id}")
     public StudentJpaEntity getStudentById(@PathVariable String id) {
         StudentJpaEntity student = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado con ID: " + id));
 
-        // Forzamos la carga de la colección si está configurada como LAZY en JPA
         if (student.getTutors() != null) {
             student.getTutors().size();
         }
@@ -53,7 +54,7 @@ public class StudentController {
         return student;
     }
 
-    // POST: Crear un nuevo alumno
+    //  Crear un nuevo alumno (con soporte de legajo manual/administrativo)
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TEACHER')")
     @PostMapping
     public StudentJpaEntity createStudent(@RequestBody StudentJpaEntity student) {
@@ -61,14 +62,14 @@ public class StudentController {
         return repository.save(student);
     }
 
-    // POST: Vincular tutores
+    // Vincular tutores
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TEACHER')")
     @PostMapping("/{studentId}/tutors")
     public void linkTutors(@PathVariable String studentId, @RequestBody List<TutorAssignmentRequest> requests) {
         studentTutorService.assignTutorsToStudent(studentId, requests);
     }
 
-    // POST: Dar de baja alumno
+    //  Dar de baja alumno y archivarlo en el historial
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PostMapping("/{id}/baja")
     public void darDeBajaAlumno(@PathVariable String id) {
@@ -82,8 +83,8 @@ public class StudentController {
                 alumno.getDocumentNumber(),
                 alumno.getClassroom(),
                 alumno.getBirthDate(),
-                alumno.getTelefonoContacto(),
-                alumno.getDireccion(),
+                alumno.getContactPhone(),
+                alumno.getAddress(),
                 LocalDate.now()
         );
         studentHistoryRepository.save(historico);
@@ -91,18 +92,26 @@ public class StudentController {
         repository.delete(alumno);
     }
 
-    // Permitimos que DIRECTOR, ADMINISTRATIVE y TUTOR puedan actualizar la ficha
+    //  Actualizar ficha completa del alumno
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TUTOR')")
     @PutMapping("/{id}")
     public StudentJpaEntity updateStudent(@PathVariable String id, @RequestBody StudentJpaEntity updatedStudent) {
         StudentJpaEntity existing = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado"));
 
+        existing.setLegajoNumber(updatedStudent.getLegajoNumber());
         existing.setFirstName(updatedStudent.getFirstName());
         existing.setLastName(updatedStudent.getLastName());
         existing.setDocumentNumber(updatedStudent.getDocumentNumber());
+        existing.setBirthDate(updatedStudent.getBirthDate());
         existing.setClassroom(updatedStudent.getClassroom());
-        existing.setDireccion(updatedStudent.getDireccion());
+        existing.setGender(updatedStudent.getGender());
+        existing.setBloodType(updatedStudent.getBloodType());
+        existing.setHealthInsurance(updatedStudent.getHealthInsurance());
+        existing.setAllergies(updatedStudent.getAllergies());
+        existing.setBirthPlace(updatedStudent.getBirthPlace());
+        existing.setAddress(updatedStudent.getAddress());
+        existing.setContactPhone(updatedStudent.getContactPhone());
 
         return repository.save(existing);
     }

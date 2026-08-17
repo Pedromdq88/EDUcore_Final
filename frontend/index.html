@@ -79,6 +79,9 @@
       <button onclick="showSection('retirosView')" id="nav-retirosView" class="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl text-sm font-medium text-left cursor-pointer">
         <span class="material-icons-outlined">how_to_reg</span><span>Control de Retiros</span>
       </button>
+      <button onclick="showSection('restriccionesView')" id="nav-restriccionesView" class="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl text-sm font-medium text-left cursor-pointer">
+        <span class="material-icons-outlined text-rose-600">gavel</span><span>Restricciones Judiciales</span>
+      </button>
     </nav>
   </aside>
 
@@ -160,6 +163,7 @@
             <input type="text" id="studentFirstName" placeholder="Nombre" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
             <input type="text" id="studentLastName" placeholder="Apellido" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
             <input type="text" id="studentDni" placeholder="DNI / Documento" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+            <input type="text" id="studentLegajo" placeholder="N° de Legajo Administrativo (Ej: LEG-402/26)" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
             <div>
               <label for="studentBirthDate" class="block text-xs font-semibold text-slate-600 mb-1">Fecha de Nacimiento</label>
               <input type="date" id="studentBirthDate" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
@@ -199,7 +203,7 @@
             </div>
           </div>
 
-          <div class="profile-card bg-white border border-slate-200 rounded-xl p-6 shadow-xs">
+          <div class="profile-card bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-6">
             <div class="user-header flex items-center gap-4 border-b border-slate-100 pb-4">
               <div class="avatar w-16 h-16 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-xl" id="alumno-avatar">--</div>
               <div class="user-main-info">
@@ -212,41 +216,62 @@
               </div>
             </div>
 
-            <div class="section-header flex items-center gap-2 mt-6 mb-3 text-slate-800 border-l-4 border-emerald-600 pl-3">
-              <span class="material-icons-outlined text-emerald-600">person</span>
-              <h3 class="font-bold text-base">Datos Personales</h3>
-            </div>
-            <div class="grid-info grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div class="info-card bg-slate-50 p-3 rounded-lg border border-slate-100"><label class="block text-[10px] font-bold text-slate-400 uppercase">DNI / Documento</label><span id="alumno-dni" class="text-sm font-semibold text-slate-700">-</span></div>
-              <div class="info-card bg-slate-50 p-3 rounded-lg border border-slate-100"><label class="block text-[10px] font-bold text-slate-400 uppercase">Fecha de Nacimiento</label><span id="alumno-nacimiento" class="text-sm font-semibold text-slate-700">-</span></div>
-              <div class="info-card bg-slate-50 p-3 rounded-lg border border-slate-100"><label class="block text-[10px] font-bold text-slate-400 uppercase">Domicilio</label><span id="alumno-domicilio" class="text-sm font-semibold text-slate-700">-</span></div>
-            </div>
-
-            <div class="section-header flex items-center gap-2 mt-6 mb-3 text-slate-800 border-l-4 border-emerald-600 pl-3">
-              <span class="material-icons-outlined text-emerald-600">people</span>
-              <h3 class="font-bold text-base">Tutores y Contactos de Emergencia</h3>
-            </div>
-            <div class="list-container" id="tutores-container"></div>
-
-            <!-- SECCIÓN: PERSONAS AUTORIZADAS PARA RETIRO (ESTILO LISTA COMPACTA COMO TUTORES) -->
-            <div class="flex items-center justify-between mt-6 mb-2 border-l-4 border-emerald-600 pl-3">
-              <div class="flex items-center gap-2 text-slate-800">
-                <span class="material-icons-outlined text-emerald-600">directions_car</span>
-                <h3 class="font-bold text-base">Personas Autorizadas para Retiro</h3>
+            <div>
+              <div class="section-header flex items-center gap-2 mb-3 text-slate-800 border-l-4 border-emerald-600 pl-3">
+                <span class="material-icons-outlined text-emerald-600">person</span>
+                <h3 class="font-bold text-base">Datos Personales</h3>
               </div>
-              <button onclick="abrirModalNuevoAutorizado()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-xs">
-                <span class="material-icons-outlined text-sm">person_add</span>
-                + Agregar Autorizado
-              </button>
+              <div class="grid-info grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="info-card bg-slate-50 p-3 rounded-lg border border-slate-100"><label class="block text-[10px] font-bold text-slate-400 uppercase">DNI / Documento</label><span id="alumno-dni" class="text-sm font-semibold text-slate-700">-</span></div>
+                <div class="info-card bg-slate-50 p-3 rounded-lg border border-slate-100"><label class="block text-[10px] font-bold text-slate-400 uppercase">Fecha de Nacimiento</label><span id="alumno-nacimiento" class="text-sm font-semibold text-slate-700">-</span></div>
+                <div class="info-card bg-slate-50 p-3 rounded-lg border border-slate-100"><label class="block text-[10px] font-bold text-slate-400 uppercase">Domicilio</label><span id="alumno-domicilio" class="text-sm font-semibold text-slate-700">-</span></div>
+              </div>
             </div>
 
-            <p class="text-[11px] text-slate-400 mb-3 italic">
-              Normativa Art. 154: Toda persona debe ser mayor de 18 años y presentar DNI. Haz clic en una ficha para expandir o editar.
-            </p>
-
-            <div class="space-y-2" id="autorizados-container">
-              <!-- Renderizado de tarjetas horizontales compactas -->
+            <div>
+              <div class="section-header flex items-center gap-2 mb-3 text-slate-800 border-l-4 border-emerald-600 pl-3">
+                <span class="material-icons-outlined text-emerald-600">people</span>
+                <h3 class="font-bold text-base">Tutores y Contactos de Emergencia</h3>
+              </div>
+              <div class="list-container" id="tutores-container"></div>
             </div>
+
+            <!-- SECCIÓN: PERSONAS AUTORIZADAS PARA RETIRO -->
+            <div>
+              <div class="flex items-center justify-between mb-2 border-l-4 border-emerald-600 pl-3">
+                <div class="flex items-center gap-2 text-slate-800">
+                  <span class="material-icons-outlined text-emerald-600">directions_car</span>
+                  <h3 class="font-bold text-base">Personas Autorizadas para Retiro</h3>
+                </div>
+                <button onclick="abrirModalNuevoAutorizado()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-xs">
+                  <span class="material-icons-outlined text-sm">person_add</span>
+                  + Agregar Autorizado
+                </button>
+              </div>
+              <p class="text-[11px] text-slate-400 mb-3 italic">
+                Normativa Art. 154: Toda persona debe ser mayor de 18 años y presentar DNI. Haz clic en una ficha para expandir o editar.
+              </p>
+              <div class="space-y-2" id="autorizados-container"></div>
+            </div>
+
+            <!-- SECCIÓN: RESTRICCIONES JUDICIALES -->
+            <div>
+              <div class="flex items-center justify-between mb-2 border-l-4 border-rose-600 pl-3">
+                <div class="flex items-center gap-2 text-slate-800">
+                  <span class="material-icons-outlined text-rose-600">gavel</span>
+                  <h3 class="font-bold text-base">Restricciones por Decisiones Judiciales</h3>
+                </div>
+                <button type="button" onclick="abrirModalNuevaRestriccion()" class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-xs">
+                  <span class="material-icons-outlined text-sm">add_moderator</span>
+                  + Registrar Restricción
+                </button>
+              </div>
+              <p class="text-[11px] text-slate-400 mb-3 italic">
+                La restricción solo opera en caso de acompañarse la resolución judicial certificada. Haz clic en una medida para expandir o editar.
+              </p>
+              <div class="space-y-2" id="restricciones-container"></div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -425,8 +450,6 @@
 
       <!-- SECCIÓN: GESTIÓN DE CUOTAS Y ARANCELES -->
       <div id="cuotasView" class="dashboard-view hidden">
-
-        <!-- VISTA 1: LISTADO GENERAL CON FILTRO Y BUSCADOR -->
         <div id="cuotasListView">
           <div class="border-b border-slate-200 pb-4 mb-6 flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -465,7 +488,6 @@
           </div>
         </div>
 
-        <!-- VISTA 2: DETALLE INDIVIDUAL DEL ALUMNO -->
         <div id="cuotasDetailView" class="hidden space-y-6">
           <div class="flex justify-between items-center">
             <button onclick="volverAListaCuotas()" class="btn-action-secondary flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-xl text-xs font-semibold hover:bg-slate-50 cursor-pointer">
@@ -566,7 +588,7 @@
         </div>
       </div>
 
-      <!-- SECCIÓN: GESTIÓN Y CONTROL DE RETIROS DE ALUMNOS (NUEVO MÓDULO) -->
+      <!-- SECCIÓN: GESTIÓN Y CONTROL DE RETIROS DE ALUMNOS -->
       <div id="retirosView" class="dashboard-view hidden">
         <div class="border-b border-slate-200 pb-4 mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -591,17 +613,13 @@
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          <!-- PANEL IZQUIERDO: LISTA DE ALUMNOS -->
           <div class="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
             <div class="bg-slate-100 p-3.5 border-b border-slate-200">
               <h4 class="text-xs font-bold text-slate-600 uppercase">Seleccionar Alumno</h4>
             </div>
-            <div id="retirosAlumnosList" class="divide-y divide-slate-100 max-h-[550px] overflow-y-auto">
-              <!-- Renderizado de alumnos -->
-            </div>
+            <div id="retirosAlumnosList" class="divide-y divide-slate-100 max-h-[550px] overflow-y-auto"></div>
           </div>
 
-          <!-- PANEL DERECHO: AUTORIZADOS DEL ALUMNO SELECCIONADO -->
           <div class="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
             <div class="flex flex-wrap justify-between items-center pb-4 border-b border-slate-100 gap-2">
               <div>
@@ -622,7 +640,59 @@
         </div>
       </div>
 
-    </div> <!-- Cierre max-w-6xl -->
+      <!-- SECCIÓN: GESTIÓN DE RESTRICCIONES JUDICIALES (APARTADO GENERAL) -->
+      <div id="restriccionesView" class="dashboard-view hidden">
+        <div class="border-b border-slate-200 pb-4 mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 class="text-2xl font-bold text-slate-900">Restricciones por Decisiones Judiciales</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Control de medidas cautelares, perimetrales y prohibiciones de retiro</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <select id="filterRestriccionesClassroom" onchange="filterRestriccionesTable()" class="p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-700 focus:outline-none shadow-xs">
+              <option value="TODAS">Todas las Salitas</option>
+              <option value="Maternal">Maternal</option>
+              <option value="Sala de 2 y 3">Sala de 2 y 3</option>
+              <option value="Sala de 4">Sala de 4</option>
+              <option value="Sala de 5">Sala de 5</option>
+            </select>
+
+            <div class="relative w-full sm:w-72">
+              <span class="material-icons-outlined absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+              <input type="text" id="inputFilterRestricciones" oninput="filterRestriccionesTable()" placeholder="Buscar por Alumno, DNI o Legajo..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-rose-600 shadow-xs">
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div class="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+            <div class="bg-slate-100 p-3.5 border-b border-slate-200">
+              <h4 class="text-xs font-bold text-slate-600 uppercase">Seleccionar Alumno</h4>
+            </div>
+            <div id="restriccionesAlumnosList" class="divide-y divide-slate-100 max-h-[550px] overflow-y-auto"></div>
+          </div>
+
+          <div class="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
+            <div class="flex flex-wrap justify-between items-center pb-4 border-b border-slate-100 gap-2">
+              <div>
+                <span class="block text-[10px] font-bold text-slate-400 uppercase">Alumno Seleccionado</span>
+                <h3 id="restriccionesAlumnoNombreHeader" class="text-base font-bold text-slate-800">Seleccione un alumno de la lista</h3>
+                <p id="restriccionesAlumnoInfoSub" class="text-xs text-slate-500">-</p>
+              </div>
+              <button id="btnAgregarRestriccionPanel" onclick="abrirModalNuevaRestriccion()" class="hidden bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer">
+                <span class="material-icons-outlined text-sm">add_moderator</span>
+                + Registrar Restricción
+              </button>
+            </div>
+
+            <div id="restriccionesDetalleList" class="space-y-2.5">
+              <p class="text-xs text-slate-400 p-4 text-center">Haga clic en un alumno de la izquierda para ver y gestionar sus medidas judiciales.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
   </main>
 </div>
 
@@ -812,6 +882,10 @@
           </select>
         </div>
         <div>
+          <label class="block mb-1 text-slate-600">N° de Legajo Administrativo</label>
+          <input type="text" id="edit-student-legajo" placeholder="Ej: LEG-402/26" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
+        </div>
+        <div>
           <label class="block mb-1 text-slate-600">Domicilio Familiar</label>
           <input type="text" id="edit-student-direccion" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
         </div>
@@ -938,9 +1012,137 @@
         </div>
       </div>
     </div>
-    <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2" id="detailPickupActions">
-      <!-- Acciones dinámicas de edición o eliminación -->
+    <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2" id="detailPickupActions"></div>
+  </div>
+</div>
+
+<!-- MODAL: AGREGAR / EDITAR RESTRICCIÓN JUDICIAL -->
+<div id="judicialRestrictionModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+    <div class="p-4 bg-rose-700 text-white flex justify-between items-center">
+      <h3 id="modalRestriccionTitulo" class="font-bold text-base flex items-center gap-2">
+        <span class="material-icons-outlined">gavel</span>
+        Restricción por Decisión Judicial
+      </h3>
+      <button type="button" onclick="cerrarModalRestriccion()" class="text-white/80 hover:text-white cursor-pointer"><span class="material-icons-outlined">close</span></button>
     </div>
+
+    <form id="formJudicialRestriction" onsubmit="guardarRestriccionJudicial(event)" class="p-6 space-y-4">
+      <input type="hidden" id="restriccionEditId" value="">
+
+      <div>
+        <h4 class="text-xs font-bold text-rose-800 uppercase tracking-wider mb-2">Persona Restringida / Prohibida</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block mb-1 text-[11px] font-semibold text-slate-600">Apellido/s *</label>
+            <input type="text" id="restriccionLastName" required placeholder="Ej: Gómez" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-rose-600 focus:bg-white">
+          </div>
+          <div>
+            <label class="block mb-1 text-[11px] font-semibold text-slate-600">Nombre/s *</label>
+            <input type="text" id="restriccionFirstName" required placeholder="Ej: Carlos Alberto" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-rose-600 focus:bg-white">
+          </div>
+          <div>
+            <label class="block mb-1 text-[11px] font-semibold text-slate-600">Tipo de Documento *</label>
+            <select id="restriccionDocType" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-rose-600 focus:bg-white">
+              <option value="DNI">DNI</option>
+              <option value="Cédula">Cédula</option>
+              <option value="Pasaporte">Pasaporte</option>
+            </select>
+          </div>
+          <div>
+            <label class="block mb-1 text-[11px] font-semibold text-slate-600">Número de Documento *</label>
+            <input type="text" id="restriccionDocNumber" required placeholder="Sin puntos" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-rose-600 focus:bg-white">
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label class="block mb-1 text-[11px] font-semibold text-slate-600">Describa Restricción / Alcance de la Medida *</label>
+        <textarea id="restriccionDescription" required rows="2" placeholder="Ej: Prohibición de acercamiento y retiro del menor..." class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-rose-600 focus:bg-white"></textarea>
+      </div>
+
+      <div class="bg-rose-50/60 p-3.5 rounded-xl border border-rose-100">
+        <h4 class="text-[11px] font-bold text-rose-900 uppercase tracking-wider mb-2">A completar por el establecimiento</h4>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div>
+            <label class="block mb-1 text-[10px] font-bold text-slate-500 uppercase">N° Legajo</label>
+            <input type="text" id="restriccionLegajo" placeholder="Ej: L-402" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs">
+          </div>
+          <div>
+            <label class="block mb-1 text-[10px] font-bold text-slate-500 uppercase">N° de Matriz</label>
+            <input type="text" id="restriccionMatrix" placeholder="Ej: M-12" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs">
+          </div>
+          <div>
+            <label class="block mb-1 text-[10px] font-bold text-slate-500 uppercase">N° de Folio</label>
+            <input type="text" id="restriccionFolio" placeholder="Ej: F-88" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs">
+          </div>
+          <div>
+            <label class="block mb-1 text-[10px] font-bold text-slate-500 uppercase">Fecha Notif.</label>
+            <input type="date" id="restriccionDate" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs">
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+        <button type="button" onclick="cerrarModalRestriccion()" class="px-4 py-2 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer">Cancelar</button>
+        <button type="submit" class="px-4 py-2 bg-rose-600 text-white rounded-lg text-xs font-semibold hover:bg-rose-700 cursor-pointer">Guardar Medida</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: EXPANDIR DETALLE DE RESTRICCIÓN JUDICIAL -->
+<div id="restrictionDetailModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+    <div class="p-4 bg-rose-700 text-white flex justify-between items-center">
+      <h3 class="font-bold text-base flex items-center gap-2">
+        <span class="material-icons-outlined">gavel</span>
+        Ficha de Medida Judicial Certificada
+      </h3>
+      <button type="button" onclick="cerrarModalDetalleRestriccion()" class="text-white/80 hover:text-white cursor-pointer"><span class="material-icons-outlined">close</span></button>
+    </div>
+
+    <div class="p-6 space-y-4">
+      <div class="flex items-center gap-3 border-b border-slate-100 pb-3">
+        <div id="detailRestrAvatar" class="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-base">--</div>
+        <div>
+          <h4 id="detailRestrName" class="font-bold text-slate-800 text-sm">-</h4>
+          <span class="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Acceso / Retiro Prohibido</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 text-xs">
+        <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+          <span class="block text-[10px] font-bold text-slate-400 uppercase">Documento</span>
+          <span id="detailRestrDoc" class="font-semibold text-slate-700">-</span>
+        </div>
+        <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+          <span class="block text-[10px] font-bold text-slate-400 uppercase">Fecha de Inscripción</span>
+          <span id="detailRestrDate" class="font-semibold text-slate-700">-</span>
+        </div>
+        <div class="bg-slate-50 p-2.5 rounded-lg border border-slate-100 col-span-2">
+          <span class="block text-[10px] font-bold text-slate-400 uppercase">Alcance y Descripción de la Medida</span>
+          <p id="detailRestrDesc" class="font-medium text-slate-800 mt-1 text-xs leading-relaxed">-</p>
+        </div>
+      </div>
+
+      <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 grid grid-cols-3 gap-2 text-center text-xs">
+        <div>
+          <span class="block text-[10px] text-slate-400 font-bold uppercase">N° Legajo</span>
+          <span id="detailRestrLegajo" class="font-bold text-slate-700">-</span>
+        </div>
+        <div>
+          <span class="block text-[10px] text-slate-400 font-bold uppercase">N° Matriz</span>
+          <span id="detailRestrMatrix" class="font-bold text-slate-700">-</span>
+        </div>
+        <div>
+          <span class="block text-[10px] text-slate-400 font-bold uppercase">N° Folio</span>
+          <span id="detailRestrFolio" class="font-bold text-slate-700">-</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2" id="detailRestrActions"></div>
   </div>
 </div>
 

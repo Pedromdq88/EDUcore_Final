@@ -85,8 +85,8 @@ public class TutorController {
                             alumno.getDocumentNumber(),
                             alumno.getClassroom(),
                             alumno.getBirthDate(),
-                            alumno.getTelefonoContacto(),
-                            alumno.getDireccion(),
+                            alumno.getContactPhone(),
+                            alumno.getAddress(),
                             LocalDate.now()
                     );
                     studentHistoryRepository.save(alumnoHistorico);

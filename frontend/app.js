@@ -9,11 +9,9 @@ let currentTutorData = null;
 let currentStaffData = null;
 let currentStudentData = null;
 
-// 🟢 PILA DE HISTORIAL DE NAVEGACIÓN (Elimina bucles infinitos)
 let navigationHistory = [];
 
 function pushNavigation(viewType, entityId = null) {
-  // Evitar duplicar el tope de la pila
   const last = navigationHistory[navigationHistory.length - 1];
   if (!last || last.viewType !== viewType || last.entityId !== entityId) {
     navigationHistory.push({ viewType, entityId });
@@ -28,9 +26,11 @@ let institutionalEmails = {
   feeQueryEmail: 'tesoreria@onceunidos.com'
 };
 
-// Variables Globales del Módulo de Retiros
+// Variables Globales del Módulo de Retiros y Restricciones
 let selectedStudentForRetiros = null;
 let currentStudentPickups = [];
+let selectedStudentForRestricciones = null;
+let currentStudentRestrictions = [];
 
 // ========================================================
 // AUTENTICACIÓN Y NAVEGACIÓN
@@ -64,7 +64,7 @@ function handleLogout() { location.reload(); }
 
 function showSection(sectionId, clearHistory = true) {
   if (clearHistory) {
-    navigationHistory = []; // Al usar el menú lateral reseteamos el historial
+    navigationHistory = [];
   }
 
   document.querySelectorAll('.dashboard-view').forEach(v => v.classList.add('hidden'));
@@ -78,6 +78,7 @@ function showSection(sectionId, clearHistory = true) {
 
   if (sectionId === 'cuotasView') renderCuotasView();
   if (sectionId === 'retirosView') renderRetirosView();
+  if (sectionId === 'restriccionesView') renderRestriccionesView();
 }
 
 function toggleForm(id) { document.getElementById(id).classList.toggle('hidden'); }
@@ -87,6 +88,16 @@ function refreshAllData() { fetchTutors(); fetchStudents(); fetchStaff(); }
 function getInitials(name) {
   if (!name) return '--';
   return name.trim().split(/\s+/).slice(0, 2).map(n => n[0].toUpperCase()).join('');
+}
+
+function normalizarTexto(txt) {
+  if (!txt) return '';
+  return txt
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
 }
 
 // ========================================================
@@ -151,7 +162,6 @@ async function viewTutorProfile(id, isBackNavigation = false) {
     return;
   }
 
-  // Si no es volver atrás, apilamos la pantalla actual antes de cambiar
   if (!isBackNavigation) {
     if (currentStudentData && !document.getElementById('studentProfileView').classList.contains('hidden')) {
       pushNavigation('studentProfileView', currentStudentData.id);
@@ -360,9 +370,7 @@ async function guardarDatosTutor(e) {
       activeTutors[idx] = { ...activeTutors[idx], ...finalTutor };
     }
 
-
     cerrarModalEdicionTutor();
-
     setTutorData(finalTutor);
     await fetchTutors();
 
@@ -461,10 +469,6 @@ function filterStudentsTable() {
 }
 
 function openEditStudentModal() {
-  const legajoText = document.getElementById('alumno-legajo')?.textContent || '';
-  const studentId = legajoText.replace('Legajo: ', '').trim();
-
-  currentStudentData = activeStudents.find(s => s.id === studentId);
   if (!currentStudentData) {
     alert("No se pudo cargar la información del alumno para editar.");
     return;
@@ -472,10 +476,11 @@ function openEditStudentModal() {
 
   document.getElementById('edit-student-nombre').value = currentStudentData.firstName || '';
   document.getElementById('edit-student-apellido').value = currentStudentData.lastName || '';
+  document.getElementById('edit-student-legajo').value = currentStudentData.legajoNumber || currentStudentData.legajo || '';
   document.getElementById('edit-student-dni').value = currentStudentData.documentNumber || '';
   document.getElementById('edit-student-nacimiento').value = currentStudentData.birthDate || '';
   document.getElementById('edit-student-classroom').value = currentStudentData.classroom || 'Maternal';
-  document.getElementById('edit-student-direccion').value = currentStudentData.direccion || '';
+  document.getElementById('edit-student-direccion').value = currentStudentData.address || currentStudentData.direccion || '';
 
   document.getElementById('studentEditModal').classList.remove('hidden');
 }
@@ -488,14 +493,20 @@ async function guardarDatosAlumno(e) {
   e.preventDefault();
   if (!currentStudentData || !currentStudentData.id) return;
 
+  const legajoVal = document.getElementById('edit-student-legajo').value.trim();
+  const dirVal = document.getElementById('edit-student-direccion').value.trim();
+
   const updatedPayload = {
     ...currentStudentData,
     firstName: document.getElementById('edit-student-nombre').value.trim(),
     lastName: document.getElementById('edit-student-apellido').value.trim(),
+    legajoNumber: legajoVal,
+    legajo: legajoVal,
     documentNumber: document.getElementById('edit-student-dni').value.trim(),
     birthDate: document.getElementById('edit-student-nacimiento').value,
     classroom: document.getElementById('edit-student-classroom').value,
-    direccion: document.getElementById('edit-student-direccion').value.trim()
+    address: dirVal,
+    direccion: dirVal
   };
 
   try {
@@ -532,7 +543,6 @@ async function showStudentProfile(studentId, isBackNavigation = false) {
     if (!response.ok) throw new Error("Error al consultar el perfil");
     const data = await response.json();
 
-    // Si no es volver atrás, apilamos la pantalla actual antes de cambiar
     if (!isBackNavigation) {
       if (currentTutorData && !document.getElementById('tutorProfileView').classList.contains('hidden')) {
         pushNavigation('tutorProfileView', currentTutorData.id);
@@ -551,12 +561,13 @@ async function showStudentProfile(studentId, isBackNavigation = false) {
     document.getElementById('alumno-nombre').textContent = `${nombre} ${apellido}`.trim() || '-';
     document.getElementById('alumno-avatar').textContent = getInitials(`${nombre} ${apellido}`);
 
-    document.getElementById('alumno-legajo').textContent = `Legajo: ${data.id || '-'}`;
+    const legajoVisual = data.legajoNumber || data.legajo || (data.id ? data.id.substring(0, 8) : '-');
+    document.getElementById('alumno-legajo').textContent = `Legajo: ${legajoVisual}`;
     document.getElementById('alumno-curso').textContent = `Salita: ${data.classroom || '-'}`;
     document.getElementById('alumno-estado').textContent = `Estado: ${data.status || 'ACTIVO'}`;
     document.getElementById('alumno-dni').textContent = data.documentNumber || '-';
     document.getElementById('alumno-nacimiento').textContent = data.birthDate || '-';
-    document.getElementById('alumno-domicilio').textContent = data.direccion || '-';
+    document.getElementById('alumno-domicilio').textContent = data.address || data.direccion || '-';
 
     const btnBajaAlumno = document.getElementById('btn-baja-alumno');
     if (btnBajaAlumno) {
@@ -608,6 +619,7 @@ async function showStudentProfile(studentId, isBackNavigation = false) {
     }
 
     await fetchAndRenderPickupsGeneral(studentId, 'autorizados-container');
+    await fetchAndRenderRestrictionsGeneral(studentId, 'restricciones-container');
 
   } catch (error) {
     console.error("Error al cargar perfil de alumno:", error);
@@ -632,7 +644,7 @@ function hideStudentProfile() {
 
 async function confirmarBajaAlumno() {
   const legajoText = document.getElementById('alumno-legajo').textContent;
-  const studentId = legajoText.replace('Legajo: ', '').trim();
+  const studentId = currentStudentData?.id;
 
   const student = activeStudents.find(s => s.id === studentId);
   if (!student) return;
@@ -676,13 +688,19 @@ async function submitStudent() {
     return;
   }
 
+  const legajoVal = document.getElementById('studentLegajo')?.value.trim() || '';
+  const dirVal = document.getElementById('studentDireccion')?.value.trim() || '';
+
   const studentData = {
     firstName: document.getElementById('studentFirstName')?.value.trim() || '',
     lastName: document.getElementById('studentLastName')?.value.trim() || '',
+    legajoNumber: legajoVal,
+    legajo: legajoVal,
     documentNumber: document.getElementById('studentDni')?.value.trim() || '',
     birthDate: birthDateValue,
     classroom: document.getElementById('studentClassroom')?.value || '',
-    direccion: document.getElementById('studentDireccion')?.value.trim() || '',
+    address: dirVal,
+    direccion: dirVal,
     status: "ACTIVE"
   };
 
@@ -1194,7 +1212,7 @@ function filterCuotasTable() {
   if (!tbody) return;
 
   const filterClassroom = document.getElementById('filterCuotasClassroom')?.value || 'TODAS';
-  const query = (document.getElementById('inputFilterCuotasStudents')?.value || '').trim().toLowerCase();
+  const rawQuery = document.getElementById('inputFilterCuotasStudents')?.value || '';
   const role = currentSession.role;
 
   let list = activeStudents;
@@ -1205,14 +1223,24 @@ function filterCuotasTable() {
     });
   }
 
+  const terms = normalizarTexto(rawQuery).split(/\s+/).filter(t => t.length > 0);
+
   const filtered = list.filter(s => {
     const matchClass = (filterClassroom === 'TODAS' || s.classroom === filterClassroom);
-    const nom = `${s.firstName || ''} ${s.lastName || ''}`.toLowerCase();
-    const ape = `${s.lastName || ''} ${s.firstName || ''}`.toLowerCase();
-    const dni = (s.documentNumber || '').toLowerCase();
-    const legajo = (s.id || '').toLowerCase();
-    const matchQuery = !query || nom.includes(query) || ape.includes(query) || dni.includes(query) || legajo.includes(query);
-    return matchClass && matchQuery;
+    if (!matchClass) return false;
+
+    if (terms.length === 0) return true;
+
+    const searchableString = normalizarTexto(`
+      ${s.firstName || ''} 
+      ${s.lastName || ''} 
+      ${s.legajoNumber || s.legajo || ''}
+      ${s.documentNumber || ''} 
+      ${s.id || ''} 
+      ${s.classroom || ''}
+    `);
+
+    return terms.every(term => searchableString.includes(term));
   });
 
   if (filtered.length === 0) {
@@ -1243,9 +1271,11 @@ async function abrirDetalleCuotas(studentId) {
   document.getElementById('cuotasListView').classList.add('hidden');
   document.getElementById('cuotasDetailView').classList.remove('hidden');
 
+  const legajoVisual = alumno.legajoNumber || alumno.legajo || (alumno.id ? alumno.id.substring(0, 8) : '-');
+
   document.getElementById('cuotasAlumnoNombre').textContent = `${alumno.lastName || ''}, ${alumno.firstName || ''}`;
   document.getElementById('cuotasAlumnoDni').textContent = alumno.documentNumber || '-';
-  document.getElementById('cuotasAlumnoLegajoSala').textContent = `Legajo: ${alumno.id ? alumno.id.substring(0, 8) : '-'} | Salita: ${alumno.classroom || '-'}`;
+  document.getElementById('cuotasAlumnoLegajoSala').textContent = `Legajo: ${legajoVisual} | Salita: ${alumno.classroom || '-'}`;
 
   const esAdmin = (currentSession.role === 'DIRECTOR' || currentSession.role === 'ADMINISTRATIVE');
   document.getElementById('cuotasEditActionContainer').classList.toggle('hidden', !esAdmin);
@@ -1469,15 +1499,26 @@ function filterRetirosTable() {
   if (!container) return;
 
   const filterClassroom = document.getElementById('filterRetirosClassroom')?.value || 'TODAS';
-  const query = (document.getElementById('inputFilterRetiros')?.value || '').trim().toLowerCase();
+  const rawQuery = document.getElementById('inputFilterRetiros')?.value || '';
+
+  const terms = normalizarTexto(rawQuery).split(/\s+/).filter(t => t.length > 0);
 
   const filtrados = activeStudents.filter(s => {
     const matchClass = (filterClassroom === 'TODAS' || s.classroom === filterClassroom);
-    const nom = `${s.firstName || ''} ${s.lastName || ''}`.toLowerCase();
-    const ape = `${s.lastName || ''} ${s.firstName || ''}`.toLowerCase();
-    const dni = (s.documentNumber || '').toLowerCase();
-    const legajo = (s.id || '').toLowerCase();
-    return matchClass && (!query || nom.includes(query) || ape.includes(query) || dni.includes(query) || legajo.includes(query));
+    if (!matchClass) return false;
+
+    if (terms.length === 0) return true;
+
+    const searchableString = normalizarTexto(`
+      ${s.firstName || ''} 
+      ${s.lastName || ''} 
+      ${s.legajoNumber || s.legajo || ''}
+      ${s.documentNumber || ''} 
+      ${s.id || ''} 
+      ${s.classroom || ''}
+    `);
+
+    return terms.every(term => searchableString.includes(term));
   });
 
   if (filtrados.length === 0) {
@@ -1501,15 +1542,16 @@ async function seleccionarAlumnoRetiros(studentId) {
   const alumno = activeStudents.find(s => s.id === studentId);
   if (!alumno) return;
 
+  const legajoVisual = alumno.legajoNumber || alumno.legajo || (alumno.id ? alumno.id.substring(0, 8) : '--');
+
   document.getElementById('retirosAlumnoNombreHeader').textContent = `${alumno.lastName || ''}, ${alumno.firstName || ''}`;
-  document.getElementById('retirosAlumnoInfoSub').textContent = `DNI: ${alumno.documentNumber || '--'} | Salita: ${alumno.classroom || '--'} | Legajo: ${alumno.id ? alumno.id.substring(0, 8) : '--'}`;
+  document.getElementById('retirosAlumnoInfoSub').textContent = `DNI: ${alumno.documentNumber || '--'} | Salita: ${alumno.classroom || '--'} | Legajo: ${legajoVisual}`;
   document.getElementById('btnAgregarAutorizadoPanel').classList.remove('hidden');
 
   filterRetirosTable();
   await fetchAndRenderPickupsGeneral(studentId, 'retirosDetalleAutorizados');
 }
 
-// Cálculo preciso de edad
 function calcularEdadDesdeFecha(fechaStr) {
   if (!fechaStr) return null;
   const hoy = new Date();
@@ -1674,7 +1716,7 @@ async function guardarPersonaAutorizada(e) {
   if (!studentId) {
     const legajoElem = document.getElementById('alumno-legajo');
     if (legajoElem) {
-      studentId = legajoElem.textContent.replace('Legajo: ', '').trim();
+      studentId = currentStudentData?.id;
     }
   }
 
@@ -1757,10 +1799,7 @@ async function guardarPersonaAutorizada(e) {
 async function eliminarPersonaAutorizada(pickupId) {
   let studentId = selectedStudentForRetiros;
   if (!studentId) {
-    const legajoElem = document.getElementById('alumno-legajo');
-    if (legajoElem) {
-      studentId = legajoElem.textContent.replace('Legajo: ', '').trim();
-    }
+    studentId = currentStudentData?.id;
   }
 
   if (!confirm("¿Deseas retirar la autorización de retiro a esta persona?")) return;
@@ -1786,5 +1825,310 @@ async function eliminarPersonaAutorizada(pickupId) {
     }
   } catch (err) {
     console.error("Error al eliminar autorizado:", err);
+  }
+}
+
+// ========================================================
+// MÓDULO DE RESTRICCIONES JUDICIALES
+// ========================================================
+
+function renderRestriccionesView() {
+  filterRestriccionesTable();
+}
+
+function filterRestriccionesTable() {
+  const container = document.getElementById('restriccionesAlumnosList');
+  if (!container) return;
+
+  const filterClassroom = document.getElementById('filterRestriccionesClassroom')?.value || 'TODAS';
+  const rawQuery = document.getElementById('inputFilterRestricciones')?.value || '';
+
+  const terms = normalizarTexto(rawQuery).split(/\s+/).filter(t => t.length > 0);
+
+  const filtrados = activeStudents.filter(s => {
+    const matchClass = (filterClassroom === 'TODAS' || s.classroom === filterClassroom);
+    if (!matchClass) return false;
+
+    if (terms.length === 0) return true;
+
+    const searchableString = normalizarTexto(`
+      ${s.firstName || ''} 
+      ${s.lastName || ''} 
+      ${s.legajoNumber || s.legajo || ''}
+      ${s.documentNumber || ''} 
+      ${s.id || ''} 
+      ${s.classroom || ''}
+    `);
+
+    return terms.every(term => searchableString.includes(term));
+  });
+
+  if (filtrados.length === 0) {
+    container.innerHTML = '<p class="text-xs text-slate-400 p-4 text-center">No se encontraron alumnos.</p>';
+    return;
+  }
+
+  container.innerHTML = filtrados.map(s => `
+    <div onclick="seleccionarAlumnoRestricciones('${s.id}')" class="p-3 hover:bg-rose-50/60 cursor-pointer flex justify-between items-center transition-colors ${selectedStudentForRestricciones === s.id ? 'bg-rose-50 border-l-4 border-rose-600' : ''}">
+      <div>
+        <h4 class="font-bold text-slate-800 text-xs">${s.lastName || ''}, ${s.firstName || ''}</h4>
+        <span class="text-slate-400 text-[11px] block">DNI: ${s.documentNumber || '--'} | ${s.classroom || 'Sin sala'}</span>
+      </div>
+      <span class="material-icons-outlined text-slate-300 text-sm">chevron_right</span>
+    </div>
+  `).join('');
+}
+
+async function seleccionarAlumnoRestricciones(studentId) {
+  selectedStudentForRestricciones = studentId;
+  const alumno = activeStudents.find(s => s.id === studentId);
+  if (!alumno) return;
+
+  const legajoVisual = alumno.legajoNumber || alumno.legajo || (alumno.id ? alumno.id.substring(0, 8) : '--');
+
+  const header = document.getElementById('restriccionesAlumnoNombreHeader');
+  const sub = document.getElementById('restriccionesAlumnoInfoSub');
+  const btn = document.getElementById('btnAgregarRestriccionPanel');
+
+  if (header) header.textContent = `${alumno.lastName || ''}, ${alumno.firstName || ''}`;
+  if (sub) sub.textContent = `DNI: ${alumno.documentNumber || '--'} | Salita: ${alumno.classroom || '--'} | Legajo: ${legajoVisual}`;
+  if (btn) btn.classList.remove('hidden');
+
+  filterRestriccionesTable();
+  await fetchAndRenderRestrictionsGeneral(studentId, 'restriccionesDetalleList');
+}
+
+async function fetchAndRenderRestrictionsGeneral(studentId, targetContainerId) {
+  const container = document.getElementById(targetContainerId);
+  if (!container) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/students/${studentId}/judicial-restrictions`, {
+      headers: {
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      }
+    });
+
+    currentStudentRestrictions = res.ok ? await res.json() : [];
+
+    if (currentStudentRestrictions.length === 0) {
+      container.innerHTML = `
+        <div class="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">
+          No constan medidas de restricción judicial certificadas para este alumno.
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = currentStudentRestrictions.map(r => `
+      <div onclick="verPerfilAmpliadoRestriccion('${r.id}')" class="p-3.5 bg-white border border-rose-200 rounded-xl shadow-xs hover:border-rose-500 hover:shadow-sm transition-all flex justify-between items-center cursor-pointer group">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-sm group-hover:bg-rose-600 group-hover:text-white transition-colors">
+            ${getInitials(`${r.firstName || ''} ${r.lastName || ''}`)}
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h4 class="font-bold text-slate-900 group-hover:text-rose-700 text-xs">${r.lastName}, ${r.firstName}</h4>
+              <span class="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-2 py-0.5 rounded-md">Prohibición Judicial</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-0.5">
+              ${r.documentType || 'DNI'}: ${r.documentNumber} | <strong>Medida:</strong> ${r.description.length > 45 ? r.description.substring(0, 45) + '...' : r.description}
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1">
+          <button onclick="event.stopPropagation(); abrirModalEditarRestriccion('${r.id}')" title="Editar" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 cursor-pointer">
+            <span class="material-icons-outlined text-sm">edit</span>
+          </button>
+          <button onclick="event.stopPropagation(); eliminarRestriccionJudicial('${r.id}')" title="Eliminar" class="p-1.5 text-slate-400 hover:text-rose-700 rounded-lg hover:bg-rose-50 cursor-pointer">
+            <span class="material-icons-outlined text-sm">delete</span>
+          </button>
+        </div>
+      </div>
+    `).join('');
+
+  } catch (error) {
+    console.error("Error cargando restricciones judiciales:", error);
+  }
+}
+
+function verPerfilAmpliadoRestriccion(restrictionId) {
+  const r = currentStudentRestrictions.find(item => item.id === restrictionId);
+  if (!r) return;
+
+  const nombreCompleto = `${r.lastName || ''}, ${r.firstName || ''}`.trim();
+
+  const avatarEl = document.getElementById('detailRestrAvatar');
+  const nameEl = document.getElementById('detailRestrName');
+  const docEl = document.getElementById('detailRestrDoc');
+  const dateEl = document.getElementById('detailRestrDate');
+  const descEl = document.getElementById('detailRestrDesc');
+  const legajoEl = document.getElementById('detailRestrLegajo');
+  const matrixEl = document.getElementById('detailRestrMatrix');
+  const folioEl = document.getElementById('detailRestrFolio');
+  const actionsEl = document.getElementById('detailRestrActions');
+  const modalEl = document.getElementById('restrictionDetailModal');
+
+  if (avatarEl) avatarEl.textContent = getInitials(nombreCompleto);
+  if (nameEl) nameEl.textContent = nombreCompleto || '-';
+  if (docEl) docEl.textContent = `${r.documentType || 'DNI'}: ${r.documentNumber || '-'}`;
+  if (dateEl) dateEl.textContent = r.inscriptionDate || 'No especificada';
+  if (descEl) descEl.textContent = r.description || '-';
+  if (legajoEl) legajoEl.textContent = r.legajoNumber || '-';
+  if (matrixEl) matrixEl.textContent = r.matrixNumber || '-';
+  if (folioEl) folioEl.textContent = r.folioNumber || '-';
+
+  if (actionsEl) {
+    actionsEl.innerHTML = `
+      <button onclick="cerrarModalDetalleRestriccion(); abrirModalEditarRestriccion('${r.id}')" class="px-4 py-2 bg-rose-600 text-white rounded-lg text-xs font-semibold hover:bg-rose-700 cursor-pointer flex items-center gap-1">
+        <span class="material-icons-outlined text-xs">edit</span>
+        Editar Medida
+      </button>
+      <button type="button" onclick="cerrarModalDetalleRestriccion()" class="px-4 py-2 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer">Cerrar</button>
+    `;
+  }
+
+  if (modalEl) modalEl.classList.remove('hidden');
+}
+
+function cerrarModalDetalleRestriccion() {
+  const modal = document.getElementById('restrictionDetailModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function abrirModalNuevaRestriccion() {
+  const form = document.getElementById('formJudicialRestriction');
+  if (form) form.reset();
+
+  const editId = document.getElementById('restriccionEditId');
+  if (editId) editId.value = '';
+
+  const titulo = document.getElementById('modalRestriccionTitulo');
+  if (titulo) titulo.innerHTML = '<span class="material-icons-outlined">gavel</span> Nueva Restricción Judicial';
+
+  const modal = document.getElementById('judicialRestrictionModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function abrirModalEditarRestriccion(restrictionId) {
+  const r = currentStudentRestrictions.find(item => item.id === restrictionId);
+  if (!r) return;
+
+  document.getElementById('restriccionEditId').value = r.id;
+  document.getElementById('restriccionLastName').value = r.lastName || '';
+  document.getElementById('restriccionFirstName').value = r.firstName || '';
+  document.getElementById('restriccionDocType').value = r.documentType || 'DNI';
+  document.getElementById('restriccionDocNumber').value = r.documentNumber || '';
+  document.getElementById('restriccionDescription').value = r.description || '';
+  document.getElementById('restriccionLegajo').value = r.legajoNumber || '';
+  document.getElementById('restriccionMatrix').value = r.matrixNumber || '';
+  document.getElementById('restriccionFolio').value = r.folioNumber || '';
+  document.getElementById('restriccionDate').value = r.inscriptionDate || '';
+
+  const titulo = document.getElementById('modalRestriccionTitulo');
+  if (titulo) titulo.innerHTML = '<span class="material-icons-outlined">edit</span> Editar Restricción Judicial';
+
+  const modal = document.getElementById('judicialRestrictionModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function cerrarModalRestriccion() {
+  const modal = document.getElementById('judicialRestrictionModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function guardarRestriccionJudicial(e) {
+  e.preventDefault();
+
+  let studentId = selectedStudentForRestricciones;
+  if (!studentId) {
+    studentId = currentStudentData?.id;
+  }
+
+  if (!studentId || studentId === '-') {
+    alert("No se pudo identificar al alumno.");
+    return;
+  }
+
+  const editId = document.getElementById('restriccionEditId').value.trim();
+  const payload = {
+    lastName: document.getElementById('restriccionLastName').value.trim(),
+    firstName: document.getElementById('restriccionFirstName').value.trim(),
+    documentType: document.getElementById('restriccionDocType').value,
+    documentNumber: document.getElementById('restriccionDocNumber').value.trim(),
+    description: document.getElementById('restriccionDescription').value.trim(),
+    legajoNumber: document.getElementById('restriccionLegajo').value.trim(),
+    matrixNumber: document.getElementById('restriccionMatrix').value.trim(),
+    folioNumber: document.getElementById('restriccionFolio').value.trim(),
+    inscriptionDate: document.getElementById('restriccionDate').value || null
+  };
+
+  try {
+    const url = editId
+        ? `${API_BASE_URL}/students/${studentId}/judicial-restrictions/${editId}`
+        : `${API_BASE_URL}/students/${studentId}/judicial-restrictions`;
+
+    const method = editId ? 'PUT' : 'POST';
+
+    const res = await fetch(url, {
+      method: method,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      alert("¡Medida de restricción judicial guardada correctamente!");
+      cerrarModalRestriccion();
+      if (document.getElementById('studentProfileView') && !document.getElementById('studentProfileView').classList.contains('hidden')) {
+        await fetchAndRenderRestrictionsGeneral(studentId, 'restricciones-container');
+      }
+      if (document.getElementById('restriccionesView') && !document.getElementById('restriccionesView').classList.contains('hidden')) {
+        await fetchAndRenderRestrictionsGeneral(studentId, 'restriccionesDetalleList');
+      }
+    } else {
+      const errText = await res.text();
+      alert(`Error al guardar la restricción: ${errText}`);
+    }
+  } catch (err) {
+    console.error("Error al guardar restricción:", err);
+    alert("Error de conexión con el servidor.");
+  }
+}
+
+async function eliminarRestriccionJudicial(restrictionId) {
+  let studentId = selectedStudentForRestricciones;
+  if (!studentId) {
+    studentId = currentStudentData?.id;
+  }
+
+  if (!confirm("¿Está seguro de eliminar este registro de restricción judicial del alumno?")) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/students/${studentId}/judicial-restrictions/${restrictionId}`, {
+      method: 'DELETE',
+      headers: {
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      }
+    });
+
+    if (res.ok) {
+      if (document.getElementById('studentProfileView') && !document.getElementById('studentProfileView').classList.contains('hidden')) {
+        await fetchAndRenderRestrictionsGeneral(studentId, 'restricciones-container');
+      }
+      if (document.getElementById('restriccionesView') && !document.getElementById('restriccionesView').classList.contains('hidden')) {
+        await fetchAndRenderRestrictionsGeneral(studentId, 'restriccionesDetalleList');
+      }
+    } else {
+      alert("No se pudo eliminar el registro de restricción.");
+    }
+  } catch (err) {
+    console.error("Error al eliminar restricción:", err);
   }
 }

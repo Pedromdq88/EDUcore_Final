@@ -43,6 +43,7 @@ function handleLogin() {
   let role = 'TEACHER';
   if (email.includes('direccion') || email.includes('director')) role = 'DIRECTOR';
   else if (email.includes('admin')) role = 'ADMINISTRATIVE';
+  else if (email.includes('preceptor')) role = 'PRECEPTOR';
   else if (email.includes('tutor') || email.includes('padre')) role = 'TUTOR';
 
   currentSession.email = email;
@@ -52,7 +53,8 @@ function handleLogin() {
   document.getElementById('roleBadge').innerText =
       role === 'DIRECTOR' ? 'Directora' :
           (role === 'ADMINISTRATIVE' ? 'Administrativo' :
-              (role === 'TUTOR' ? 'Tutor' : 'Docente'));
+              (role === 'PRECEPTOR' ? 'Preceptor/a' :
+                  (role === 'TUTOR' ? 'Tutor' : 'Docente')));
 
   document.getElementById('loginPage').classList.add('hidden');
   document.getElementById('mainDashboard').classList.remove('hidden');
@@ -76,14 +78,21 @@ function showSection(sectionId, clearHistory = true) {
   const btn = document.getElementById(`nav-${sectionId}`);
   if (btn) btn.classList.add('bg-emerald-50', 'text-emerald-700');
 
+  if (sectionId === 'inicioView') renderInicioFeed();
   if (sectionId === 'cuotasView') renderCuotasView();
   if (sectionId === 'retirosView') renderRetirosView();
   if (sectionId === 'restriccionesView') renderRestriccionesView();
+  if (sectionId === 'comunicadosView') renderComunicadosView();
 }
 
 function toggleForm(id) { document.getElementById(id).classList.toggle('hidden'); }
 
-function refreshAllData() { fetchTutors(); fetchStudents(); fetchStaff(); }
+function refreshAllData() {
+  fetchTutors();
+  fetchStudents();
+  fetchStaff();
+  fetchAnnouncements();
+}
 
 function getInitials(name) {
   if (!name) return '--';
@@ -290,7 +299,7 @@ function evaluarPermisosPerfilTutor() {
   const role = currentSession.role;
 
   if (btnEdit) {
-    if (['DIRECTOR', 'ADMINISTRATIVE', 'TEACHER', 'TUTOR'].includes(role)) {
+    if (['DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER', 'TUTOR'].includes(role)) {
       btnEdit.classList.remove('hidden');
     } else {
       btnEdit.classList.add('hidden');
@@ -620,6 +629,7 @@ async function showStudentProfile(studentId, isBackNavigation = false) {
 
     await fetchAndRenderPickupsGeneral(studentId, 'autorizados-container');
     await fetchAndRenderRestrictionsGeneral(studentId, 'restricciones-container');
+    await renderComunicadosPrivadosAlumno(studentId);
 
   } catch (error) {
     console.error("Error al cargar perfil de alumno:", error);
@@ -643,7 +653,6 @@ function hideStudentProfile() {
 }
 
 async function confirmarBajaAlumno() {
-  const legajoText = document.getElementById('alumno-legajo').textContent;
   const studentId = currentStudentData?.id;
 
   const student = activeStudents.find(s => s.id === studentId);
@@ -1714,10 +1723,7 @@ async function guardarPersonaAutorizada(e) {
 
   let studentId = selectedStudentForRetiros;
   if (!studentId) {
-    const legajoElem = document.getElementById('alumno-legajo');
-    if (legajoElem) {
-      studentId = currentStudentData?.id;
-    }
+    studentId = currentStudentData?.id;
   }
 
   if (!studentId || studentId === '-') {
@@ -2005,6 +2011,25 @@ function abrirModalNuevaRestriccion() {
   const editId = document.getElementById('restriccionEditId');
   if (editId) editId.value = '';
 
+  let student = null;
+  if (selectedStudentForRestricciones) {
+    student = activeStudents.find(s => s.id === selectedStudentForRestricciones);
+  }
+  if (!student && currentStudentData) {
+    student = currentStudentData;
+  }
+
+  const inputLegajo = document.getElementById('restriccionLegajo');
+  if (inputLegajo) {
+    const legajoVal = student ? (student.legajoNumber || student.legajo || (student.id ? student.id.substring(0, 8) : '')) : '';
+    inputLegajo.value = legajoVal;
+  }
+
+  const inputDate = document.getElementById('restriccionDate');
+  if (inputDate && !inputDate.value) {
+    inputDate.value = new Date().toISOString().split('T')[0];
+  }
+
   const titulo = document.getElementById('modalRestriccionTitulo');
   if (titulo) titulo.innerHTML = '<span class="material-icons-outlined">gavel</span> Nueva Restricción Judicial';
 
@@ -2130,5 +2155,321 @@ async function eliminarRestriccionJudicial(restrictionId) {
     }
   } catch (err) {
     console.error("Error al eliminar restricción:", err);
+  }
+}
+
+// ========================================================
+// MÓDULO DE COMUNICADOS
+// ========================================================
+
+let announcementsList = [];
+
+function renderComunicadosView() {
+  filterComunicadosFeed();
+  evaluarPermisosComunicados();
+}
+
+async function fetchAnnouncements() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/announcements`, {
+      headers: {
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      }
+    });
+
+    announcementsList = res.ok ? await res.json() : [];
+    renderInicioFeed();
+    filterComunicadosFeed();
+
+  } catch (error) {
+    console.error("Error al cargar comunicados:", error);
+  }
+}
+
+function getAuthorizedAnnouncements() {
+  let list = announcementsList;
+
+  if (currentSession.role === 'TEACHER') {
+    const userClass = currentStaffData?.classroom;
+    list = list.filter(a => a.scope === 'GLOBAL' || a.targetClassroom === userClass);
+  } else if (currentSession.role === 'TUTOR') {
+    const tutorKids = activeStudents.filter(s => s.tutors && s.tutors.some(t => t.email === currentSession.email));
+    const kidsSalas = tutorKids.map(k => k.classroom);
+    const kidsIds = tutorKids.map(k => k.id);
+
+    list = list.filter(a =>
+        a.scope === 'GLOBAL' ||
+        (a.scope === 'CLASSROOM' && kidsSalas.includes(a.targetClassroom)) ||
+        (a.scope === 'PRIVATE_STUDENT' && kidsIds.includes(a.targetStudentId))
+    );
+  }
+  return list;
+}
+
+function renderInicioFeed() {
+  const container = document.getElementById('inicioComunicadosFeed');
+  if (!container) return;
+
+  const list = getAuthorizedAnnouncements().filter(a => a.scope !== 'PRIVATE_STUDENT').slice(0, 3);
+
+  if (list.length === 0) {
+    container.innerHTML = `<div class="p-4 bg-white border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">No hay comunicados recientes publicados.</div>`;
+    return;
+  }
+
+  container.innerHTML = list.map(a => renderCardHtml(a, false)).join('');
+}
+
+function filterComunicadosFeed() {
+  const container = document.getElementById('comunicadosFeedContainer');
+  if (!container) return;
+
+  const targetScope = document.getElementById('filterComunicadosClassroom')?.value || 'TODAS';
+  let list = getAuthorizedAnnouncements().filter(a => a.scope !== 'PRIVATE_STUDENT');
+
+  if (targetScope !== 'TODAS') {
+    if (targetScope === 'GLOBAL') {
+      list = list.filter(a => a.scope === 'GLOBAL');
+    } else {
+      list = list.filter(a => a.targetClassroom === targetScope);
+    }
+  }
+
+  if (list.length === 0) {
+    container.innerHTML = `<div class="bg-white border border-dashed border-slate-200 rounded-2xl p-8 text-center text-xs text-slate-400">No hay comunicados publicados para este criterio.</div>`;
+    return;
+  }
+
+  container.innerHTML = list.map(a => renderCardHtml(a, true)).join('');
+}
+
+async function renderComunicadosPrivadosAlumno(studentId) {
+  const container = document.getElementById('alumno-comunicados-privados');
+  if (!container) return;
+
+  const list = announcementsList.filter(a => a.scope === 'PRIVATE_STUDENT' && a.targetStudentId === studentId);
+
+  if (list.length === 0) {
+    container.innerHTML = `<div class="p-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">No hay mensajes privados registrados para este alumno.</div>`;
+    return;
+  }
+
+  container.innerHTML = list.map(a => renderCardHtml(a, true)).join('');
+}
+
+function renderCardHtml(a, canEditIfAuthorized) {
+  let badgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-200';
+  if (a.category === 'ACTIVIDAD') badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (a.category === 'URGENTE') badgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
+  if (a.category === 'PRIVADO') badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
+
+  const canManage = canEditIfAuthorized && ['DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER'].includes(currentSession.role);
+
+  return `
+    <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-2.5">
+      <div class="flex justify-between items-start">
+        <div class="flex items-center gap-2">
+          <span class="border text-[10px] font-bold px-2 py-0.5 rounded uppercase ${badgeClass}">${a.category}</span>
+          <span class="text-xs font-semibold text-slate-600">${a.scope === 'GLOBAL' ? 'Todo el Jardín' : (a.scope === 'CLASSROOM' ? `Salita: ${a.targetClassroom}` : 'Mensaje Privado')}</span>
+        </div>
+        ${canManage ? `
+          <div class="flex items-center gap-1">
+            <button onclick="abrirModalEditarComunicado('${a.id}')" title="Editar" class="p-1 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-50 cursor-pointer">
+              <span class="material-icons-outlined text-sm">edit</span>
+            </button>
+            <button onclick="eliminarComunicado('${a.id}')" title="Eliminar" class="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 cursor-pointer">
+              <span class="material-icons-outlined text-sm">delete</span>
+            </button>
+          </div>
+        ` : ''}
+      </div>
+
+      <div>
+        <h4 class="text-sm font-bold text-slate-900">${a.title}</h4>
+        <p class="text-xs text-slate-600 mt-1 whitespace-pre-line leading-relaxed">${a.content}</p>
+      </div>
+
+      ${a.mediaUrl ? `
+        <a href="${a.mediaUrl}" target="_blank" class="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded text-xs font-semibold text-indigo-700 hover:bg-indigo-50 transition-colors">
+          <span class="material-icons-outlined text-xs">smart_display</span>
+          <span>Ver Material / Enlace</span>
+        </a>
+      ` : ''}
+
+      <div class="pt-2 border-t border-slate-100 flex justify-between items-center text-[10px] text-slate-400">
+        <span>Por: <strong class="text-slate-600">${a.authorName} (${a.authorRole})</strong></span>
+        <span>${a.createdAt ? new Date(a.createdAt).toLocaleDateString('es-AR') : 'Reciente'}</span>
+      </div>
+    </div>
+  `;
+}
+
+function handleComunicadoScopeChange() {
+  const scope = document.getElementById('comunicadoScope')?.value;
+  const blockSala = document.getElementById('comunicadoClassroomBlock');
+  if (blockSala) blockSala.classList.toggle('hidden', scope !== 'CLASSROOM');
+}
+
+function evaluarPermisosComunicados() {
+  const btnNuevo = document.getElementById('btnNuevoComunicado');
+  if (btnNuevo) {
+    const canCreate = ['DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER'].includes(currentSession.role);
+    btnNuevo.classList.toggle('hidden', !canCreate);
+  }
+}
+
+function abrirModalNuevoComunicado() {
+  const form = document.getElementById('formComunicado');
+  if (form) form.reset();
+
+  document.getElementById('comunicadoEditId').value = '';
+  document.getElementById('comunicadoTargetStudentId').value = '';
+
+  const scopeSel = document.getElementById('comunicadoScope');
+  const salaSel = document.getElementById('comunicadoTargetClassroom');
+
+  if (currentSession.role === 'TEACHER') {
+    if (scopeSel) {
+      scopeSel.value = 'CLASSROOM';
+      scopeSel.querySelector('option[value="GLOBAL"]').disabled = true;
+      scopeSel.querySelector('option[value="PRIVATE_STUDENT"]').disabled = true;
+    }
+    if (salaSel && currentStaffData?.classroom) {
+      salaSel.value = currentStaffData.classroom;
+    }
+  } else {
+    if (scopeSel) {
+      scopeSel.querySelector('option[value="GLOBAL"]').disabled = false;
+      scopeSel.querySelector('option[value="PRIVATE_STUDENT"]').disabled = false;
+      scopeSel.value = 'GLOBAL';
+    }
+  }
+
+  handleComunicadoScopeChange();
+  document.getElementById('modalComunicadoTitulo').innerHTML = '<span class="material-icons-outlined">campaign</span> Nuevo Comunicado Institucional';
+  document.getElementById('comunicadoModal').classList.remove('hidden');
+}
+
+function abrirModalComunicadoPrivado() {
+  if (!currentStudentData) return;
+
+  abrirModalNuevoComunicado();
+
+  document.getElementById('comunicadoTargetStudentId').value = currentStudentData.id;
+  document.getElementById('comunicadoCategory').value = 'PRIVADO';
+  const scopeSel = document.getElementById('comunicadoScope');
+  if (scopeSel) {
+    scopeSel.value = 'PRIVATE_STUDENT';
+  }
+  handleComunicadoScopeChange();
+
+  document.getElementById('modalComunicadoTitulo').innerHTML = `<span class="material-icons-outlined">mail</span> Mensaje Privado a Familia de ${currentStudentData.firstName}`;
+}
+
+function abrirModalEditarComunicado(comunicadoId) {
+  const a = announcementsList.find(item => item.id === comunicadoId);
+  if (!a) return;
+
+  document.getElementById('comunicadoEditId').value = a.id;
+  document.getElementById('comunicadoTargetStudentId').value = a.targetStudentId || '';
+  document.getElementById('comunicadoTitle').value = a.title || '';
+  document.getElementById('comunicadoCategory').value = a.category || 'GENERAL';
+  document.getElementById('comunicadoScope').value = a.scope || 'GLOBAL';
+  document.getElementById('comunicadoContent').value = a.content || '';
+  document.getElementById('comunicadoMediaUrl').value = a.mediaUrl || '';
+
+  handleComunicadoScopeChange();
+
+  if (a.targetClassroom) {
+    document.getElementById('comunicadoTargetClassroom').value = a.targetClassroom;
+  }
+
+  document.getElementById('modalComunicadoTitulo').innerHTML = '<span class="material-icons-outlined">edit</span> Editar Comunicado';
+  document.getElementById('comunicadoModal').classList.remove('hidden');
+}
+
+function cerrarModalComunicado() {
+  document.getElementById('comunicadoModal').classList.add('hidden');
+}
+
+async function guardarComunicado(e) {
+  e.preventDefault();
+
+  const editId = document.getElementById('comunicadoEditId').value.trim();
+  const scope = document.getElementById('comunicadoScope').value;
+  const targetStudentId = document.getElementById('comunicadoTargetStudentId').value.trim() || null;
+
+  const payload = {
+    authorId: currentSession.email,
+    authorName: currentSession.email.split('@')[0],
+    authorRole: currentSession.role,
+    title: document.getElementById('comunicadoTitle').value.trim(),
+    content: document.getElementById('comunicadoContent').value.trim(),
+    category: document.getElementById('comunicadoCategory').value,
+    scope: scope,
+    targetClassroom: scope === 'CLASSROOM' ? document.getElementById('comunicadoTargetClassroom').value : null,
+    targetStudentId: targetStudentId,
+    mediaUrl: document.getElementById('comunicadoMediaUrl').value.trim() || null,
+    isPinned: false
+  };
+
+  try {
+    const url = editId
+        ? `${API_BASE_URL}/announcements/${editId}`
+        : `${API_BASE_URL}/announcements`;
+
+    const method = editId ? 'PUT' : 'POST';
+
+    const res = await fetch(url, {
+      method: method,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      alert("¡Comunicado procesado con éxito!");
+      cerrarModalComunicado();
+      await fetchAnnouncements();
+
+      if (currentStudentData && !document.getElementById('studentProfileView').classList.contains('hidden')) {
+        renderComunicadosPrivadosAlumno(currentStudentData.id);
+      }
+    } else {
+      const err = await res.text();
+      alert(`Error al guardar comunicado: ${err}`);
+    }
+  } catch (error) {
+    console.error("Error al guardar comunicado:", error);
+    alert("Error de conexión con el servidor.");
+  }
+}
+
+async function eliminarComunicado(comunicadoId) {
+  if (!confirm("¿Deseas eliminar este comunicado?")) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/announcements/${comunicadoId}`, {
+      method: 'DELETE',
+      headers: {
+        'X-Institution-Id': currentSession.institutionId,
+        'X-User-Role': currentSession.role
+      }
+    });
+
+    if (res.ok) {
+      await fetchAnnouncements();
+      if (currentStudentData) {
+        renderComunicadosPrivadosAlumno(currentStudentData.id);
+      }
+    } else {
+      alert("No se pudo eliminar el comunicado.");
+    }
+  } catch (error) {
+    console.error("Error al eliminar comunicado:", error);
   }
 }

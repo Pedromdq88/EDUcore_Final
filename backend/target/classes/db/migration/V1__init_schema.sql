@@ -216,3 +216,32 @@ VALUES (
            'administracion@onceunidos.com',
            'tesoreria@onceunidos.com'
        );
+
+-- ===================================================================================
+-- TABLA: TABLÓN DE AVISOS Y COMUNICADOS INSTITUCIONALES
+-- ===================================================================================
+
+CREATE TABLE IF NOT EXISTS institution_announcements (
+                                                         id VARCHAR(36) NOT NULL,
+    tenant_id VARCHAR(36) NOT NULL,
+    author_id VARCHAR(36) NOT NULL,
+    author_name VARCHAR(150) NOT NULL,
+    author_role VARCHAR(50) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    content TEXT NOT NULL,
+    category VARCHAR(50) NOT NULL DEFAULT 'GENERAL',
+    scope VARCHAR(50) NOT NULL,
+    target_classroom VARCHAR(100) NULL,
+    target_student_id VARCHAR(36) NULL,
+    media_url VARCHAR(500) NULL,
+    is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    INDEX idx_announcement_tenant (tenant_id),
+    INDEX idx_announcement_scope (scope, target_classroom),
+    INDEX idx_announcement_student (target_student_id),
+    CONSTRAINT fk_announcement_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT fk_announcement_student FOREIGN KEY (target_student_id) REFERENCES students(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

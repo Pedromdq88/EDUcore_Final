@@ -64,6 +64,9 @@
       <button onclick="showSection('inicioView')" id="nav-inicioView" class="w-full flex items-center gap-3 px-4 py-3 bg-emerald-50 text-emerald-700 font-medium rounded-xl text-sm text-left cursor-pointer">
         <span class="material-icons-outlined">home</span><span>Inicio</span>
       </button>
+      <button onclick="showSection('comunicadosView')" id="nav-comunicadosView" class="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl text-sm font-medium text-left cursor-pointer">
+        <span class="material-icons-outlined text-indigo-600">campaign</span><span>Tablón de Comunicados</span>
+      </button>
       <button onclick="showSection('tutorsView')" id="nav-tutorsView" class="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-xl text-sm font-medium text-left cursor-pointer">
         <span class="material-icons-outlined">family_restroom</span><span>Gestión de Padres</span>
       </button>
@@ -92,13 +95,57 @@
       <div id="inicioView" class="dashboard-view">
         <div class="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-md p-8 mb-8">
           <h2 class="text-3xl font-bold tracking-tight mb-2">Establecimiento Escolar Once Unidos</h2>
-          <p class="text-emerald-50/90 text-sm max-w-xl">Consola de control jerárquico para el procesamiento de matrículas y control de personal docente.</p>
+          <p class="text-emerald-50/90 text-sm max-w-xl">Consola de control jerárquico para el procesamiento de matrículas, tablón de comunicados y personal.</p>
         </div>
+
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><span class="material-icons-outlined text-3xl text-emerald-600 mb-2">escalator_warning</span><h3 class="font-bold text-slate-800 text-sm">Alumnos Totales</h3><div id="countStudentsBadge" class="text-2xl font-bold text-slate-900">0</div></div>
           <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><span class="material-icons-outlined text-3xl text-emerald-600 mb-2">family_restroom</span><h3 class="font-bold text-slate-800 text-sm">Padres Totales</h3><div id="countTutorsBadge" class="text-2xl font-bold text-slate-900">0</div></div>
           <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm"><span class="material-icons-outlined text-3xl text-emerald-600 mb-2">badge</span><h3 class="font-bold text-slate-800 text-sm">Personal Activo</h3><div id="countStaffBadge" class="text-2xl font-bold text-slate-900">0</div></div>
         </div>
+
+        <!-- FEED DE COMUNICADOS EN EL INICIO -->
+        <div class="mt-8">
+          <div class="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
+            <div class="flex items-center gap-2">
+              <span class="material-icons-outlined text-indigo-600">campaign</span>
+              <h3 class="font-bold text-lg text-slate-900">Muro de Comunicados Recientes</h3>
+            </div>
+            <button onclick="showSection('comunicadosView')" class="text-xs font-bold text-indigo-700 hover:underline flex items-center gap-1 cursor-pointer">
+              <span>Ver todos los comunicados</span>
+              <span class="material-icons-outlined text-sm">arrow_forward</span>
+            </button>
+          </div>
+          <div id="inicioComunicadosFeed" class="space-y-3 max-w-4xl"></div>
+        </div>
+      </div>
+
+      <!-- SECCIÓN: TABLÓN DE COMUNICADOS Y ACTIVIDADES -->
+      <div id="comunicadosView" class="dashboard-view hidden">
+        <div class="border-b border-slate-200 pb-4 mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 class="text-2xl font-bold text-slate-900">Tablón de Comunicados y Actividades</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Notificaciones oficiales, material pedagógico y circulares por salita</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <select id="filterComunicadosClassroom" onchange="filterComunicadosFeed()" class="p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-700 focus:outline-none shadow-xs">
+              <option value="TODAS">Todos los Comunicados</option>
+              <option value="GLOBAL">Comunicados Globales (Todo el Jardín)</option>
+              <option value="Maternal">Maternal</option>
+              <option value="Sala de 2 y 3">Sala de 2 y 3</option>
+              <option value="Sala de 4">Sala de 4</option>
+              <option value="Sala de 5">Sala de 5</option>
+            </select>
+
+            <button id="btnNuevoComunicado" onclick="abrirModalNuevoComunicado()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer">
+              <span class="material-icons-outlined text-sm">add_circle</span>
+              + Nuevo Comunicado
+            </button>
+          </div>
+        </div>
+
+        <div id="comunicadosFeedContainer" class="space-y-4 max-w-4xl mx-auto"></div>
       </div>
 
       <!-- SECCIÓN: PADRES -->
@@ -270,6 +317,24 @@
                 La restricción solo opera en caso de acompañarse la resolución judicial certificada. Haz clic en una medida para expandir o editar.
               </p>
               <div class="space-y-2" id="restricciones-container"></div>
+            </div>
+
+            <!-- SECCIÓN: COMUNICADOS PRIVADOS A LA FAMILIA -->
+            <div>
+              <div class="flex items-center justify-between mb-2 border-l-4 border-amber-600 pl-3">
+                <div class="flex items-center gap-2 text-slate-800">
+                  <span class="material-icons-outlined text-amber-600">mail</span>
+                  <h3 class="font-bold text-base">Mensajes y Comunicados Privados a la Familia</h3>
+                </div>
+                <button type="button" onclick="abrirModalComunicadoPrivado()" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-xs">
+                  <span class="material-icons-outlined text-sm">send</span>
+                  + Enviar Mensaje Privado
+                </button>
+              </div>
+              <p class="text-[11px] text-slate-400 mb-3 italic">
+                Canal de notificación directa a los tutores de este alumno (sólo lectura para la familia).
+              </p>
+              <div class="space-y-2" id="alumno-comunicados-privados"></div>
             </div>
 
           </div>
@@ -1143,6 +1208,78 @@
     </div>
 
     <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2" id="detailRestrActions"></div>
+  </div>
+</div>
+
+<!-- MODAL: CREAR / EDITAR COMUNICADO O AVISO (GENERAL O PRIVADO) -->
+<div id="comunicadoModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+    <div class="p-4 bg-indigo-700 text-white flex justify-between items-center">
+      <h3 id="modalComunicadoTitulo" class="font-bold text-base flex items-center gap-2">
+        <span class="material-icons-outlined">campaign</span>
+        Nuevo Comunicado Institucional
+      </h3>
+      <button type="button" onclick="cerrarModalComunicado()" class="text-white/80 hover:text-white cursor-pointer"><span class="material-icons-outlined">close</span></button>
+    </div>
+
+    <form id="formComunicado" onsubmit="guardarComunicado(event)" class="p-6 space-y-3.5">
+      <input type="hidden" id="comunicadoEditId" value="">
+      <input type="hidden" id="comunicadoTargetStudentId" value="">
+
+      <div>
+        <label class="block mb-1 text-xs font-semibold text-slate-600">Título / Asunto *</label>
+        <input type="text" id="comunicadoTitle" required placeholder="Ej: Traer materiales para taller de arte" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-indigo-600 focus:bg-white">
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="bloqueCategoriasAlcance">
+        <div>
+          <label class="block mb-1 text-xs font-semibold text-slate-600">Categoría / Tipo *</label>
+          <select id="comunicadoCategory" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-indigo-600 focus:bg-white">
+            <option value="GENERAL">Aviso General</option>
+            <option value="ACTIVIDAD">Actividad / Tarea</option>
+            <option value="URGENTE">Importante / Urgente</option>
+            <option value="PRIVADO">Mensaje a Familia</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block mb-1 text-xs font-semibold text-slate-600">Alcance / Destinatarios *</label>
+          <select id="comunicadoScope" onchange="handleComunicadoScopeChange()" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-indigo-600 focus:bg-white">
+            <option value="GLOBAL">Todo el Establecimiento (Global)</option>
+            <option value="CLASSROOM">Salita / Curso Específico</option>
+            <option value="PRIVATE_STUDENT">Privado a un Alumno Específico</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="comunicadoClassroomBlock" class="hidden bg-indigo-50/60 p-3 rounded-xl border border-indigo-100">
+        <label class="block mb-1 text-[11px] font-bold text-indigo-900 uppercase">Seleccionar Salita</label>
+        <select id="comunicadoTargetClassroom" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs">
+          <option value="Maternal">Maternal</option>
+          <option value="Sala de 2 y 3">Sala de 2 y 3</option>
+          <option value="Sala de 4">Sala de 4</option>
+          <option value="Sala de 5">Sala de 5</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block mb-1 text-xs font-semibold text-slate-600">Cuerpo del Mensaje / Indicaciones *</label>
+        <textarea id="comunicadoContent" required rows="4" placeholder="Escriba aquí las indicaciones, tareas o el comunicado oficial..." class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-indigo-600 focus:bg-white"></textarea>
+      </div>
+
+      <div>
+        <label class="block mb-1 text-xs font-semibold text-slate-600">Enlace Externo (Video de YouTube, Google Drive o Material)</label>
+        <div class="relative">
+          <span class="material-icons-outlined absolute left-2.5 top-2.5 text-slate-400 text-sm">link</span>
+          <input type="url" id="comunicadoMediaUrl" placeholder="https://youtube.com/watch?v=... o https://drive.google.com/..." class="w-full pl-8 p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-indigo-600 focus:bg-white">
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+        <button type="button" onclick="cerrarModalComunicado()" class="px-4 py-2 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer">Cancelar</button>
+        <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 cursor-pointer">Publicar Comunicado</button>
+      </div>
+    </form>
   </div>
 </div>
 

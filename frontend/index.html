@@ -125,17 +125,16 @@
         <div class="border-b border-slate-200 pb-4 mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 class="text-2xl font-bold text-slate-900">Tablón de Comunicados y Actividades</h2>
-            <p class="text-xs text-slate-500 mt-0.5">Notificaciones oficiales, material pedagógico y circulares por salita</p>
+            <p class="text-xs text-slate-500 mt-0.5">Notificaciones oficiales, material pedagógico y circulares por sección</p>
           </div>
 
           <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
             <select id="filterComunicadosClassroom" onchange="filterComunicadosFeed()" class="p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-700 focus:outline-none shadow-xs">
               <option value="TODAS">Todos los Comunicados</option>
               <option value="GLOBAL">Comunicados Globales (Todo el Jardín)</option>
-              <option value="Maternal">Maternal</option>
-              <option value="Sala de 2 y 3">Sala de 2 y 3</option>
-              <option value="Sala de 4">Sala de 4</option>
-              <option value="Sala de 5">Sala de 5</option>
+              <option value="1° Sección (3 años)">1° Sección (3 años)</option>
+              <option value="2° Sección (4 años)">2° Sección (4 años)</option>
+              <option value="3° Sección (5 años)">3° Sección (5 años)</option>
             </select>
 
             <button id="btnNuevoComunicado" onclick="abrirModalNuevoComunicado()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer">
@@ -185,11 +184,14 @@
         <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-xs mb-6 flex flex-wrap gap-4 items-center">
           <span class="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><span class="material-icons-outlined text-sm">filter_alt</span> Filtrar Lista:</span>
           <select id="filterStudentClassroom" onchange="filterStudentsTable()" class="p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 focus:outline-none">
-            <option value="TODAS">Todas las Salitas</option>
-            <option value="Maternal">Maternal</option><option value="Sala de 2 y 3">Sala de 2 y 3</option><option value="Sala de 4">Sala de 4</option><option value="Sala de 5">Sala de 5</option>
+            <option value="TODAS">Todas las Secciones</option>
+            <option value="1° Sección (3 años)">1° Sección (3 años)</option>
+            <option value="2° Sección (4 años)">2° Sección (4 años)</option>
+            <option value="3° Sección (5 años)">3° Sección (5 años)</option>
           </select>
         </div>
 
+        <!-- FORMULARIO DE ALTA CON ASIGNACIÓN AUTOMÁTICA DE SECCIÓN -->
         <div id="studentFormContainer" class="hidden bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-6 max-w-2xl">
           <div class="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 bg-amber-50 p-3 rounded-xl border border-amber-200 mb-4">
             <div>
@@ -211,21 +213,37 @@
             <input type="text" id="studentLastName" placeholder="Apellido" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
             <input type="text" id="studentDni" placeholder="DNI / Documento" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
             <input type="text" id="studentLegajo" placeholder="N° de Legajo Administrativo (Ej: LEG-402/26)" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+
             <div>
-              <label for="studentBirthDate" class="block text-xs font-semibold text-slate-600 mb-1">Fecha de Nacimiento</label>
-              <input type="date" id="studentBirthDate" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+              <label for="studentAcademicYear" class="block text-xs font-semibold text-slate-600 mb-1">Ciclo Lectivo de Ingreso</label>
+              <select id="studentAcademicYear" onchange="recalcularSalaFormularioMatricula()" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 font-bold text-emerald-800">
+                <!-- Se llena dinámicamente -->
+              </select>
             </div>
-            <select id="studentClassroom" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 font-medium">
-              <option value="Maternal">Maternal</option><option value="Sala de 2 y 3">Sala de 2 y 3</option><option value="Sala de 4">Sala de 4</option><option value="Sala de 5">Sala de 5</option>
-            </select>
-            <input type="text" id="studentDireccion" placeholder="Dirección Familiar" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+
+            <div>
+              <label for="studentBirthDate" class="block text-xs font-semibold text-slate-600 mb-1">Fecha de Nacimiento *</label>
+              <input type="date" id="studentBirthDate" onchange="recalcularSalaFormularioMatricula()" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+            </div>
+
+            <!-- Visor automático de Sección calculada por corte al 30/06 -->
+            <div class="sm:col-span-2 bg-emerald-50/80 p-3 rounded-xl border border-emerald-200 flex justify-between items-center">
+              <div>
+                <span class="block text-[10px] font-bold text-emerald-900 uppercase">Sección Asignada Automáticamente (Corte al 30/06)</span>
+                <span id="labelSalaCalculada" class="text-sm font-bold text-emerald-800">Seleccione fecha de nacimiento</span>
+              </div>
+              <input type="hidden" id="studentClassroom" value="">
+              <span class="material-icons-outlined text-emerald-600">school</span>
+            </div>
+
+            <input type="text" id="studentDireccion" placeholder="Dirección Familiar" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 sm:col-span-2">
           </div>
           <div class="flex justify-end gap-2"><button onclick="submitStudent()" class="bg-emerald-600 text-white px-5 py-2 rounded-lg text-sm font-semibold cursor-pointer">Matricular Alumno</button></div>
         </div>
 
         <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
           <table class="w-full text-left border-collapse">
-            <thead><tr class="bg-slate-100 text-[11px] font-bold text-slate-500 uppercase"><th class="p-3">Alumno</th><th class="p-3">DNI</th><th class="p-3">Sala</th><th class="p-3 text-center">Ficha Legajo</th></tr></thead>
+            <thead><tr class="bg-slate-100 text-[11px] font-bold text-slate-500 uppercase"><th class="p-3">Alumno</th><th class="p-3">DNI</th><th class="p-3">Sección</th><th class="p-3 text-center">Ficha Legajo</th></tr></thead>
             <tbody id="studentsTableBody" class="divide-y divide-slate-100 text-sm text-slate-700"></tbody>
           </table>
         </div>
@@ -257,7 +275,7 @@
                 <h1 id="alumno-nombre" class="text-xl font-bold text-slate-900">-</h1>
                 <div class="meta-tags flex gap-2 mt-1">
                   <span class="tag bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-md text-xs font-semibold border border-slate-200" id="alumno-legajo">Legajo: -</span>
-                  <span class="tag bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-md text-xs font-semibold border border-slate-200" id="alumno-curso">Salita: -</span>
+                  <span class="tag bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-md text-xs font-semibold border border-slate-200" id="alumno-curso">Sección: -</span>
                   <span class="tag tag-active bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-md text-xs font-semibold" id="alumno-estado">Estado: ACTIVO</span>
                 </div>
               </div>
@@ -438,9 +456,11 @@
               <input type="date" id="staffHireDate" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
             </div>
             <div id="staffClassroomBlock" class="sm:col-span-2 bg-emerald-50 p-3 rounded-xl border border-emerald-100">
-              <label class="block text-xs font-bold text-emerald-800 mb-1">Asignar Salita Pedagógica</label>
+              <label class="block text-xs font-bold text-emerald-800 mb-1">Asignar Sección Pedagógica</label>
               <select id="staffAssignedClassroom" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm">
-                <option value="Maternal">Maternal</option><option value="Sala de 2 y 3">Sala de 2 y 3</option><option value="Sala de 4">Sala de 4</option><option value="Sala de 5">Sala de 5</option>
+                <option value="1° Sección (3 años)">1° Sección (3 años)</option>
+                <option value="2° Sección (4 años)">2° Sección (4 años)</option>
+                <option value="3° Sección (5 años)">3° Sección (5 años)</option>
               </select>
             </div>
           </div>
@@ -524,11 +544,10 @@
 
             <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
               <select id="filterCuotasClassroom" onchange="filterCuotasTable()" class="p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-700 focus:outline-none shadow-xs">
-                <option value="TODAS">Todas las Salitas</option>
-                <option value="Maternal">Maternal</option>
-                <option value="Sala de 2 y 3">Sala de 2 y 3</option>
-                <option value="Sala de 4">Sala de 4</option>
-                <option value="Sala de 5">Sala de 5</option>
+                <option value="TODAS">Todas las Secciones</option>
+                <option value="1° Sección (3 años)">1° Sección (3 años)</option>
+                <option value="2° Sección (4 años)">2° Sección (4 años)</option>
+                <option value="3° Sección (5 años)">3° Sección (5 años)</option>
               </select>
 
               <div class="relative w-full sm:w-72">
@@ -544,7 +563,7 @@
               <tr class="bg-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                 <th class="p-3.5">Estudiante</th>
                 <th class="p-3.5">DNI / Documento</th>
-                <th class="p-3.5">Salita</th>
+                <th class="p-3.5">Sección</th>
                 <th class="p-3.5 text-center">Acción</th>
               </tr>
               </thead>
@@ -586,7 +605,7 @@
                 <span id="cuotasAlumnoDni" class="text-xs font-semibold text-slate-700">-</span>
               </div>
               <div>
-                <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Legajo / Salita</span>
+                <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Legajo / Sección</span>
                 <span id="cuotasAlumnoLegajoSala" class="text-xs font-semibold text-slate-700">-</span>
               </div>
               <div class="text-left sm:text-right">
@@ -663,11 +682,10 @@
 
           <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
             <select id="filterRetirosClassroom" onchange="filterRetirosTable()" class="p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-700 focus:outline-none shadow-xs">
-              <option value="TODAS">Todas las Salitas</option>
-              <option value="Maternal">Maternal</option>
-              <option value="Sala de 2 y 3">Sala de 2 y 3</option>
-              <option value="Sala de 4">Sala de 4</option>
-              <option value="Sala de 5">Sala de 5</option>
+              <option value="TODAS">Todas las Secciones</option>
+              <option value="1° Sección (3 años)">1° Sección (3 años)</option>
+              <option value="2° Sección (4 años)">2° Sección (4 años)</option>
+              <option value="3° Sección (5 años)">3° Sección (5 años)</option>
             </select>
 
             <div class="relative w-full sm:w-72">
@@ -715,11 +733,10 @@
 
           <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
             <select id="filterRestriccionesClassroom" onchange="filterRestriccionesTable()" class="p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-700 focus:outline-none shadow-xs">
-              <option value="TODAS">Todas las Salitas</option>
-              <option value="Maternal">Maternal</option>
-              <option value="Sala de 2 y 3">Sala de 2 y 3</option>
-              <option value="Sala de 4">Sala de 4</option>
-              <option value="Sala de 5">Sala de 5</option>
+              <option value="TODAS">Todas las Secciones</option>
+              <option value="1° Sección (3 años)">1° Sección (3 años)</option>
+              <option value="2° Sección (4 años)">2° Sección (4 años)</option>
+              <option value="3° Sección (5 años)">3° Sección (5 años)</option>
             </select>
 
             <div class="relative w-full sm:w-72">
@@ -830,13 +847,13 @@
       <div class="bg-slate-50 p-3 rounded-lg border border-slate-100 flex justify-between items-center">
         <div>
           <p id="planilla-docente-nombre" class="font-bold text-slate-800">-</p>
-          <p id="planilla-salita-nombre" class="text-xs text-slate-500">Salita: -</p>
+          <p id="planilla-salita-nombre" class="text-xs text-slate-500">Sección: -</p>
         </div>
         <span class="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">Activo</span>
       </div>
 
       <div class="border border-slate-200 rounded-xl overflow-hidden">
-        <div class="bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600 uppercase">Resumen de Asistencia y Salita</div>
+        <div class="bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600 uppercase">Resumen de Asistencia y Sección</div>
         <div class="p-4 space-y-3">
           <div class="flex justify-between items-center text-xs border-b border-slate-100 pb-2">
             <span class="text-slate-500">Alumnos Inscriptos:</span>
@@ -892,12 +909,11 @@
           </select>
         </div>
         <div id="editStaffClassroomBlock">
-          <label class="block mb-1 text-slate-600">Salita Pedagógica</label>
+          <label class="block mb-1 text-slate-600">Sección Pedagógica</label>
           <select id="edit-staff-classroom" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
-            <option value="Maternal">Maternal</option>
-            <option value="Sala de 2 y 3">Sala de 2 y 3</option>
-            <option value="Sala de 4">Sala de 4</option>
-            <option value="Sala de 5">Sala de 5</option>
+            <option value="1° Sección (3 años)">1° Sección (3 años)</option>
+            <option value="2° Sección (4 años)">2° Sección (4 años)</option>
+            <option value="3° Sección (5 años)">3° Sección (5 años)</option>
           </select>
         </div>
       </div>
@@ -909,7 +925,7 @@
   </div>
 </div>
 
-<!-- MODAL: EDICIÓN DE ALUMNO -->
+<!-- MODAL: EDICIÓN DE FICHA DEL ALUMNO (CON RECÁLCULO AUTOMÁTICO DE SECCIÓN) -->
 <div id="studentEditModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
   <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-100">
     <div class="p-4 bg-emerald-700 text-white flex justify-between items-center">
@@ -934,23 +950,31 @@
           <input type="text" id="edit-student-dni" required class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
         </div>
         <div>
-          <label class="block mb-1 text-slate-600">Fecha de Nacimiento</label>
-          <input type="date" id="edit-student-nacimiento" required class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
-        </div>
-        <div>
-          <label class="block mb-1 text-slate-600">Salita Pedagógica</label>
-          <select id="edit-student-classroom" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-medium">
-            <option value="Maternal">Maternal</option>
-            <option value="Sala de 2 y 3">Sala de 2 y 3</option>
-            <option value="Sala de 4">Sala de 4</option>
-            <option value="Sala de 5">Sala de 5</option>
-          </select>
-        </div>
-        <div>
           <label class="block mb-1 text-slate-600">N° de Legajo Administrativo</label>
           <input type="text" id="edit-student-legajo" placeholder="Ej: LEG-402/26" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
         </div>
         <div>
+          <label class="block mb-1 text-slate-600">Ciclo Lectivo</label>
+          <select id="edit-student-academicYear" onchange="recalcularSalaFormularioEdicion()" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-emerald-800">
+            <!-- Se llena dinámicamente -->
+          </select>
+        </div>
+        <div>
+          <label class="block mb-1 text-slate-600">Fecha de Nacimiento</label>
+          <input type="date" id="edit-student-nacimiento" onchange="recalcularSalaFormularioEdicion()" required class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
+        </div>
+
+        <!-- Visor dinámico de Sección re-calculada -->
+        <div class="sm:col-span-2 bg-emerald-50/80 p-2.5 rounded-lg border border-emerald-200 flex justify-between items-center">
+          <div>
+            <span class="block text-[10px] font-bold text-emerald-900 uppercase">Sección Pedagógica Calculada (Corte 30/06)</span>
+            <span id="edit-labelSalaCalculada" class="text-xs font-bold text-emerald-800">-</span>
+          </div>
+          <input type="hidden" id="edit-student-classroom" value="">
+          <span class="material-icons-outlined text-emerald-600 text-sm">school</span>
+        </div>
+
+        <div class="sm:col-span-2">
           <label class="block mb-1 text-slate-600">Domicilio Familiar</label>
           <input type="text" id="edit-student-direccion" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg">
         </div>
@@ -1246,19 +1270,18 @@
           <label class="block mb-1 text-xs font-semibold text-slate-600">Alcance / Destinatarios *</label>
           <select id="comunicadoScope" onchange="handleComunicadoScopeChange()" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-none focus:border-indigo-600 focus:bg-white">
             <option value="GLOBAL">Todo el Establecimiento (Global)</option>
-            <option value="CLASSROOM">Salita / Curso Específico</option>
+            <option value="CLASSROOM">Sección / Curso Específico</option>
             <option value="PRIVATE_STUDENT">Privado a un Alumno Específico</option>
           </select>
         </div>
       </div>
 
       <div id="comunicadoClassroomBlock" class="hidden bg-indigo-50/60 p-3 rounded-xl border border-indigo-100">
-        <label class="block mb-1 text-[11px] font-bold text-indigo-900 uppercase">Seleccionar Salita</label>
+        <label class="block mb-1 text-[11px] font-bold text-indigo-900 uppercase">Seleccionar Sección</label>
         <select id="comunicadoTargetClassroom" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs">
-          <option value="Maternal">Maternal</option>
-          <option value="Sala de 2 y 3">Sala de 2 y 3</option>
-          <option value="Sala de 4">Sala de 4</option>
-          <option value="Sala de 5">Sala de 5</option>
+          <option value="1° Sección (3 años)">1° Sección (3 años)</option>
+          <option value="2° Sección (4 años)">2° Sección (4 años)</option>
+          <option value="3° Sección (5 años)">3° Sección (5 años)</option>
         </select>
       </div>
 

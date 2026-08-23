@@ -33,6 +33,105 @@ let selectedStudentForRestricciones = null;
 let currentStudentRestrictions = [];
 
 // ========================================================
+// REGLA DE CORTE ESCOLAR AL 30 DE JUNIO (SECCIONES OFICIALES)
+// ========================================================
+
+function calcularSala(fechaNacimientoStr, cicloLectivo = new Date().getFullYear()) {
+  if (!fechaNacimientoStr) return { valida: false, sala: "", error: "Seleccione fecha de nacimiento" };
+
+  const [anioNac, mesNac, diaNac] = fechaNacimientoStr.split('-').map(Number);
+  if (!anioNac || !mesNac || !diaNac) return { valida: false, sala: "", error: "Fecha incompleta" };
+
+  // Corte al 30 de junio:
+  // Si nació entre julio y diciembre (mes >= 7), al 30/06 del ciclo aún no cumplió el año
+  const edadAlCorte = mesNac >= 7
+      ? (cicloLectivo - anioNac - 1)
+      : (cicloLectivo - anioNac);
+
+  switch (edadAlCorte) {
+    case 3:
+      return { valida: true, sala: "1° Sección (3 años)", error: null };
+    case 4:
+      return { valida: true, sala: "2° Sección (4 años)", error: null };
+    case 5:
+      return { valida: true, sala: "3° Sección (5 años)", error: null };
+    default:
+      if (edadAlCorte < 3) {
+        return { valida: false, sala: null, error: `❌ No admisible: Cumple ${edadAlCorte} años al 30/06 (Mínimo 3 años para 1° Sección)` };
+      } else {
+        return { valida: false, sala: null, error: `❌ No admisible: Cumple ${edadAlCorte} años al 30/06 (Corresponde a Nivel Primario)` };
+      }
+  }
+}
+
+// Genera dinámicamente las opciones del Ciclo Lectivo alrededor del año actual
+function populateAcademicYearSelects() {
+  const anioActual = new Date().getFullYear();
+  const anios = [anioActual - 1, anioActual, anioActual + 1, anioActual + 2];
+
+  const htmlOptions = anios.map(a =>
+      `<option value="${a}" ${a === anioActual ? 'selected' : ''}>Ciclo Lectivo ${a}</option>`
+  ).join('');
+
+  const selMatricula = document.getElementById('studentAcademicYear');
+  const selEdicion = document.getElementById('edit-student-academicYear');
+
+  if (selMatricula) selMatricula.innerHTML = htmlOptions;
+  if (selEdicion) selEdicion.innerHTML = htmlOptions;
+}
+
+// Recalcular la sala en el formulario de alta de matrícula
+function recalcularSalaFormularioMatricula() {
+  const birthDate = document.getElementById('studentBirthDate')?.value;
+  const cicloLectivo = parseInt(document.getElementById('studentAcademicYear')?.value || new Date().getFullYear());
+
+  const labelSala = document.getElementById('labelSalaCalculada');
+  const hiddenClassroom = document.getElementById('studentClassroom');
+
+  if (!birthDate) {
+    if (labelSala) {
+      labelSala.textContent = "Seleccione fecha de nacimiento";
+      labelSala.className = "text-sm font-bold text-slate-500";
+    }
+    if (hiddenClassroom) hiddenClassroom.value = "";
+    return;
+  }
+
+  const res = calcularSala(birthDate, cicloLectivo);
+  if (res.valida) {
+    labelSala.textContent = res.sala;
+    labelSala.className = "text-sm font-bold text-emerald-800";
+    hiddenClassroom.value = res.sala;
+  } else {
+    labelSala.textContent = res.error;
+    labelSala.className = "text-xs font-bold text-rose-600";
+    hiddenClassroom.value = "";
+  }
+}
+
+// Recalcular la sala en el modal de edición
+function recalcularSalaFormularioEdicion() {
+  const birthDate = document.getElementById('edit-student-nacimiento')?.value;
+  const cicloLectivo = parseInt(document.getElementById('edit-student-academicYear')?.value || new Date().getFullYear());
+
+  const labelSala = document.getElementById('edit-labelSalaCalculada');
+  const hiddenClassroom = document.getElementById('edit-student-classroom');
+
+  if (!birthDate) return;
+
+  const res = calcularSala(birthDate, cicloLectivo);
+  if (res.valida) {
+    labelSala.textContent = res.sala;
+    labelSala.className = "text-xs font-bold text-emerald-800";
+    hiddenClassroom.value = res.sala;
+  } else {
+    labelSala.textContent = res.error;
+    labelSala.className = "text-xs font-bold text-rose-600";
+    hiddenClassroom.value = "";
+  }
+}
+
+// ========================================================
 // AUTENTICACIÓN Y NAVEGACIÓN
 // ========================================================
 
@@ -59,6 +158,7 @@ function handleLogin() {
   document.getElementById('loginPage').classList.add('hidden');
   document.getElementById('mainDashboard').classList.remove('hidden');
 
+  populateAcademicYearSelects();
   refreshAllData();
 }
 
@@ -483,13 +583,20 @@ function openEditStudentModal() {
     return;
   }
 
+  populateAcademicYearSelects();
+
   document.getElementById('edit-student-nombre').value = currentStudentData.firstName || '';
   document.getElementById('edit-student-apellido').value = currentStudentData.lastName || '';
   document.getElementById('edit-student-legajo').value = currentStudentData.legajoNumber || currentStudentData.legajo || '';
   document.getElementById('edit-student-dni').value = currentStudentData.documentNumber || '';
   document.getElementById('edit-student-nacimiento').value = currentStudentData.birthDate || '';
-  document.getElementById('edit-student-classroom').value = currentStudentData.classroom || 'Maternal';
   document.getElementById('edit-student-direccion').value = currentStudentData.address || currentStudentData.direccion || '';
+
+  const anioAlumno = currentStudentData.academicYear || new Date().getFullYear();
+  const selAnio = document.getElementById('edit-student-academicYear');
+  if (selAnio) selAnio.value = anioAlumno;
+
+  recalcularSalaFormularioEdicion();
 
   document.getElementById('studentEditModal').classList.remove('hidden');
 }
@@ -504,6 +611,14 @@ async function guardarDatosAlumno(e) {
 
   const legajoVal = document.getElementById('edit-student-legajo').value.trim();
   const dirVal = document.getElementById('edit-student-direccion').value.trim();
+  const academicYearVal = parseInt(document.getElementById('edit-student-academicYear')?.value || new Date().getFullYear());
+  const birthDateVal = document.getElementById('edit-student-nacimiento').value;
+
+  const checkSala = calcularSala(birthDateVal, academicYearVal);
+  if (!checkSala.valida) {
+    alert(checkSala.error);
+    return;
+  }
 
   const updatedPayload = {
     ...currentStudentData,
@@ -512,8 +627,9 @@ async function guardarDatosAlumno(e) {
     legajoNumber: legajoVal,
     legajo: legajoVal,
     documentNumber: document.getElementById('edit-student-dni').value.trim(),
-    birthDate: document.getElementById('edit-student-nacimiento').value,
-    classroom: document.getElementById('edit-student-classroom').value,
+    birthDate: birthDateVal,
+    academicYear: academicYearVal,
+    classroom: checkSala.sala,
     address: dirVal,
     direccion: dirVal
   };
@@ -529,9 +645,16 @@ async function guardarDatosAlumno(e) {
       body: JSON.stringify(updatedPayload)
     });
 
-    if (!response.ok) throw new Error("Error al actualizar la ficha del alumno en el servidor");
+    if (!response.ok) {
+      let errorMsg = "Error al actualizar la ficha del alumno en el servidor";
+      try {
+        const errorJson = await response.json();
+        errorMsg = errorJson.message || errorMsg;
+      } catch (_) {}
+      throw new Error(errorMsg);
+    }
 
-    alert("¡Ficha del alumno actualizada con éxito!");
+    alert(`¡Ficha del alumno actualizada con éxito! Sección: ${checkSala.sala}`);
     closeEditStudentModal();
 
     await fetchStudents();
@@ -539,7 +662,7 @@ async function guardarDatosAlumno(e) {
 
   } catch (error) {
     console.error("Error al actualizar alumno:", error);
-    alert("No se pudieron guardar los cambios. Revisa la conexión con el servidor.");
+    alert(error.message);
   }
 }
 
@@ -572,7 +695,7 @@ async function showStudentProfile(studentId, isBackNavigation = false) {
 
     const legajoVisual = data.legajoNumber || data.legajo || (data.id ? data.id.substring(0, 8) : '-');
     document.getElementById('alumno-legajo').textContent = `Legajo: ${legajoVisual}`;
-    document.getElementById('alumno-curso').textContent = `Salita: ${data.classroom || '-'}`;
+    document.getElementById('alumno-curso').textContent = `Sección: ${data.classroom || '-'}`;
     document.getElementById('alumno-estado').textContent = `Estado: ${data.status || 'ACTIVO'}`;
     document.getElementById('alumno-dni').textContent = data.documentNumber || '-';
     document.getElementById('alumno-nacimiento').textContent = data.birthDate || '-';
@@ -685,9 +808,16 @@ async function confirmarBajaAlumno() {
 
 async function submitStudent() {
   const birthDateValue = document.getElementById('studentBirthDate')?.value;
+  const academicYearVal = parseInt(document.getElementById('studentAcademicYear')?.value || new Date().getFullYear());
 
   if (!birthDateValue) {
     alert("La fecha de nacimiento es obligatoria para registrar la matrícula.");
+    return;
+  }
+
+  const checkSala = calcularSala(birthDateValue, academicYearVal);
+  if (!checkSala.valida) {
+    alert(checkSala.error);
     return;
   }
 
@@ -707,7 +837,8 @@ async function submitStudent() {
     legajo: legajoVal,
     documentNumber: document.getElementById('studentDni')?.value.trim() || '',
     birthDate: birthDateValue,
-    classroom: document.getElementById('studentClassroom')?.value || '',
+    academicYear: academicYearVal,
+    classroom: checkSala.sala,
     address: dirVal,
     direccion: dirVal,
     status: "ACTIVE"
@@ -724,7 +855,15 @@ async function submitStudent() {
       body: JSON.stringify(studentData)
     });
 
-    if (!response.ok) throw new Error("Error al guardar el alumno en el servidor");
+    if (!response.ok) {
+      let errorMsg = "Error al guardar el alumno en el servidor";
+      try {
+        const errorJson = await response.json();
+        errorMsg = errorJson.message || errorMsg;
+      } catch (_) {}
+      throw new Error(errorMsg);
+    }
+
     const alumnoCreado = await response.json();
 
     if (alumnoCreado.id) {
@@ -739,13 +878,13 @@ async function submitStudent() {
       });
     }
 
-    alert("¡Matrícula y Tutores vinculados correctamente!");
+    alert(`¡Matrícula aprobada! Asignado automáticamente a: ${checkSala.sala}`);
     toggleForm('studentFormContainer');
     refreshAllData();
 
   } catch (error) {
     console.error("Error en la matrícula:", error);
-    alert("No se pudo registrar la matrícula. Revisa los datos ingresados.");
+    alert(error.message);
   }
 }
 
@@ -1100,11 +1239,11 @@ function verPlanillaClasesDocente() {
   if (!currentStaffData) return;
 
   const nombre = `${currentStaffData.firstName || ''} ${currentStaffData.lastName || ''}`.trim();
-  const salita = currentStaffData.classroom || 'Sin salita asignada';
+  const salita = currentStaffData.classroom || 'Sin sección asignada';
   const cantAlumnos = activeStudents.filter(s => s.classroom === currentStaffData.classroom).length;
 
   document.getElementById('planilla-docente-nombre').textContent = nombre;
-  document.getElementById('planilla-salita-nombre').textContent = `Salita: ${salita}`;
+  document.getElementById('planilla-salita-nombre').textContent = `Sección: ${salita}`;
   document.getElementById('planilla-cant-alumnos').textContent = cantAlumnos;
 
   document.getElementById('planillaModal').classList.remove('hidden');
@@ -1121,7 +1260,7 @@ function abrirModalEdicionStaff() {
   document.getElementById('edit-staff-apellido').value = currentStaffData.lastName || '';
   document.getElementById('edit-staff-email').value = currentStaffData.email || '';
   document.getElementById('edit-staff-role').value = currentStaffData.role || 'TEACHER';
-  document.getElementById('edit-staff-classroom').value = currentStaffData.classroom || 'Maternal';
+  document.getElementById('edit-staff-classroom').value = currentStaffData.classroom || '1° Sección (3 años)';
 
   handleStaffRoleFormChange(currentStaffData.role || 'TEACHER', 'editStaffClassroomBlock');
 
@@ -1284,7 +1423,7 @@ async function abrirDetalleCuotas(studentId) {
 
   document.getElementById('cuotasAlumnoNombre').textContent = `${alumno.lastName || ''}, ${alumno.firstName || ''}`;
   document.getElementById('cuotasAlumnoDni').textContent = alumno.documentNumber || '-';
-  document.getElementById('cuotasAlumnoLegajoSala').textContent = `Legajo: ${legajoVisual} | Salita: ${alumno.classroom || '-'}`;
+  document.getElementById('cuotasAlumnoLegajoSala').textContent = `Legajo: ${legajoVisual} | Sección: ${alumno.classroom || '-'}`;
 
   const esAdmin = (currentSession.role === 'DIRECTOR' || currentSession.role === 'ADMINISTRATIVE');
   document.getElementById('cuotasEditActionContainer').classList.toggle('hidden', !esAdmin);
@@ -1539,7 +1678,7 @@ function filterRetirosTable() {
     <div onclick="seleccionarAlumnoRetiros('${s.id}')" class="p-3 hover:bg-emerald-50/60 cursor-pointer flex justify-between items-center transition-colors ${selectedStudentForRetiros === s.id ? 'bg-emerald-50 border-l-4 border-emerald-600' : ''}">
       <div>
         <h4 class="font-bold text-slate-800 text-xs">${s.lastName || ''}, ${s.firstName || ''}</h4>
-        <span class="text-slate-400 text-[11px] block">DNI: ${s.documentNumber || '--'} | ${s.classroom || 'Sin sala'}</span>
+        <span class="text-slate-400 text-[11px] block">DNI: ${s.documentNumber || '--'} | ${s.classroom || 'Sin sección'}</span>
       </div>
       <span class="material-icons-outlined text-slate-300 text-sm">chevron_right</span>
     </div>
@@ -1554,7 +1693,7 @@ async function seleccionarAlumnoRetiros(studentId) {
   const legajoVisual = alumno.legajoNumber || alumno.legajo || (alumno.id ? alumno.id.substring(0, 8) : '--');
 
   document.getElementById('retirosAlumnoNombreHeader').textContent = `${alumno.lastName || ''}, ${alumno.firstName || ''}`;
-  document.getElementById('retirosAlumnoInfoSub').textContent = `DNI: ${alumno.documentNumber || '--'} | Salita: ${alumno.classroom || '--'} | Legajo: ${legajoVisual}`;
+  document.getElementById('retirosAlumnoInfoSub').textContent = `DNI: ${alumno.documentNumber || '--'} | Sección: ${alumno.classroom || '--'} | Legajo: ${legajoVisual}`;
   document.getElementById('btnAgregarAutorizadoPanel').classList.remove('hidden');
 
   filterRetirosTable();
@@ -1878,7 +2017,7 @@ function filterRestriccionesTable() {
     <div onclick="seleccionarAlumnoRestricciones('${s.id}')" class="p-3 hover:bg-rose-50/60 cursor-pointer flex justify-between items-center transition-colors ${selectedStudentForRestricciones === s.id ? 'bg-rose-50 border-l-4 border-rose-600' : ''}">
       <div>
         <h4 class="font-bold text-slate-800 text-xs">${s.lastName || ''}, ${s.firstName || ''}</h4>
-        <span class="text-slate-400 text-[11px] block">DNI: ${s.documentNumber || '--'} | ${s.classroom || 'Sin sala'}</span>
+        <span class="text-slate-400 text-[11px] block">DNI: ${s.documentNumber || '--'} | ${s.classroom || 'Sin sección'}</span>
       </div>
       <span class="material-icons-outlined text-slate-300 text-sm">chevron_right</span>
     </div>
@@ -1897,7 +2036,7 @@ async function seleccionarAlumnoRestricciones(studentId) {
   const btn = document.getElementById('btnAgregarRestriccionPanel');
 
   if (header) header.textContent = `${alumno.lastName || ''}, ${alumno.firstName || ''}`;
-  if (sub) sub.textContent = `DNI: ${alumno.documentNumber || '--'} | Salita: ${alumno.classroom || '--'} | Legajo: ${legajoVisual}`;
+  if (sub) sub.textContent = `DNI: ${alumno.documentNumber || '--'} | Sección: ${alumno.classroom || '--'} | Legajo: ${legajoVisual}`;
   if (btn) btn.classList.remove('hidden');
 
   filterRestriccionesTable();
@@ -2271,7 +2410,7 @@ function renderCardHtml(a, canEditIfAuthorized) {
       <div class="flex justify-between items-start">
         <div class="flex items-center gap-2">
           <span class="border text-[10px] font-bold px-2 py-0.5 rounded uppercase ${badgeClass}">${a.category}</span>
-          <span class="text-xs font-semibold text-slate-600">${a.scope === 'GLOBAL' ? 'Todo el Jardín' : (a.scope === 'CLASSROOM' ? `Salita: ${a.targetClassroom}` : 'Mensaje Privado')}</span>
+          <span class="text-xs font-semibold text-slate-600">${a.scope === 'GLOBAL' ? 'Todo el Jardín' : (a.scope === 'CLASSROOM' ? `Sección: ${a.targetClassroom}` : 'Mensaje Privado')}</span>
         </div>
         ${canManage ? `
           <div class="flex items-center gap-1">
@@ -2473,3 +2612,7 @@ async function eliminarComunicado(comunicadoId) {
     console.error("Error al eliminar comunicado:", error);
   }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  populateAcademicYearSelects();
+});

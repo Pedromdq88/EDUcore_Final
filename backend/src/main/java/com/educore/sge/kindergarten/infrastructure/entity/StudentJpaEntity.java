@@ -60,6 +60,9 @@ public class StudentJpaEntity extends BaseInstitutionEntity {
     @Column(name = "contact_phone")
     private String contactPhone;
 
+    @Column(name = "academic_year", nullable = false)
+    private Integer academicYear = LocalDate.now().getYear();
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private StudentStatus status = StudentStatus.ACTIVE;
@@ -78,4 +81,6 @@ public class StudentJpaEntity extends BaseInstitutionEntity {
             this.tutors.add(tutor);
         }
     }
+
+
 }

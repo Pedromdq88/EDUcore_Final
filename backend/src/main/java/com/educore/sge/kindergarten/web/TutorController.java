@@ -59,8 +59,12 @@ public class TutorController {
     // REGISTRAR NUEVO TUTOR
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TEACHER')")
     @PostMapping
-    public TutorJpaEntity createTutor(@RequestBody TutorJpaEntity tutor) {
+    public TutorJpaEntity createTutor(
+            @RequestHeader(value = "X-Institution-Id", defaultValue = "88888888-4444-4444-4444-121212121212") String institutionId,
+            @RequestBody TutorJpaEntity tutor) {
+
         tutor.setId(UUID.randomUUID().toString());
+        tutor.setTenantId(institutionId); // 🟢 Asigna el tenant_id requerido por MySQL
         return repository.save(tutor);
     }
 
@@ -85,8 +89,8 @@ public class TutorController {
                             alumno.getDocumentNumber(),
                             alumno.getClassroom(),
                             alumno.getBirthDate(),
-                            alumno.getTelefonoContacto(),
-                            alumno.getDireccion(),
+                            alumno.getContactPhone(),
+                            alumno.getAddress(),
                             LocalDate.now()
                     );
                     studentHistoryRepository.save(alumnoHistorico);

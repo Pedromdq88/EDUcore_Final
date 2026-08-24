@@ -5,7 +5,7 @@
 CREATE DATABASE IF NOT EXISTS educore_sge;
 USE educore_sge;
 
--- 1. TABLA: INSTITUCIONES (TENANTS)
+-- 1. TABLA INSTITUCIONES (TENANTS)
 CREATE TABLE IF NOT EXISTS tenants (
                                        id VARCHAR(36) NOT NULL,
     name VARCHAR(150) NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     PRIMARY KEY (id)
     );
 
--- 2. TABLA: ALUMNOS / ESTUDIANTES
+-- 2. TABLA ALUMNOS / ESTUDIANTES
 CREATE TABLE IF NOT EXISTS students (
                                         id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS students (
     CONSTRAINT fk_students_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 3. TABLA: TUTORES Y RESPONSABLES
+-- 3. TABLA TUTORES Y RESPONSABLES
 CREATE TABLE IF NOT EXISTS tutors (
                                       id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS tutors (
     CONSTRAINT fk_tutors_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 4. TABLA INTERMEDIA: RELACIÓN ALUMNO - TUTORES
+-- 4. TABLA RELACIÓN ALUMNO - TUTORES
 CREATE TABLE IF NOT EXISTS student_tutors (
                                               student_id VARCHAR(36) NOT NULL,
     tutor_id VARCHAR(36) NOT NULL,
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS student_tutors (
     CONSTRAINT fk_st_tutor FOREIGN KEY (tutor_id) REFERENCES tutors(id) ON DELETE CASCADE
     );
 
--- 5. TABLA: PERSONAL DOCENTE Y NO DOCENTE (STAFF)
+-- 5. TABLA STAFF
 CREATE TABLE IF NOT EXISTS institution_staff (
                                                  id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS institution_staff (
     CONSTRAINT fk_staff_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 6. TABLA: TABLÓN DE COMUNICADOS INSTITUCIONALES
+-- 6. TABLA DE COMUNICADOS INSTITUCIONALES
 CREATE TABLE IF NOT EXISTS institution_announcements (
                                                          id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS institution_announcements (
     CONSTRAINT fk_announcement_student FOREIGN KEY (target_student_id) REFERENCES students(id) ON DELETE CASCADE
     );
 
--- 7. TABLA: PERSONAS AUTORIZADAS PARA RETIRO (ART. 154)
+-- 7. TABLA PERSONAS AUTORIZADAS PARA RETIRO
 CREATE TABLE IF NOT EXISTS student_authorized_pickups (
                                                           id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS student_authorized_pickups (
     CONSTRAINT fk_pickup_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 8. TABLA: RESTRICCIONES JUDICIALES CERTIFICADAS
+-- 8. TABLA RESTRICCIONES JUDICIALES CERTIFICADAS
 CREATE TABLE IF NOT EXISTS student_judicial_restrictions (
                                                              id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS student_judicial_restrictions (
     CONSTRAINT fk_restr_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 9. TABLA: CUOTAS Y ARANCELES ESCOLARES
+-- 9. TABLA CUOTAS Y ARANCELES ESCOLARES
 CREATE TABLE IF NOT EXISTS student_fees (
                                             id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -200,7 +200,7 @@ CREATE TABLE IF NOT EXISTS student_fees (
     CONSTRAINT fk_fees_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 10. TABLA: HISTÓRICO DE ALUMNOS DADOS DE BAJA
+-- 10. TABLA HISTÓRICO DE ALUMNOS DADOS DE BAJA
 CREATE TABLE IF NOT EXISTS student_history (
                                                id VARCHAR(36) NOT NULL,
     first_name VARCHAR(100) NOT NULL,
@@ -215,7 +215,9 @@ CREATE TABLE IF NOT EXISTS student_history (
     PRIMARY KEY (id)
     );
 
--- 11. INSERCIÓN DEL TENANT INICIAL
+
+
+-- INSERCIÓN DEL TENANT INICIAL
 INSERT INTO tenants (id, name, cue_code)
 VALUES ('88888888-4444-4444-4444-121212121212', 'Jardín Once Unidos', '0600123-4')
     ON DUPLICATE KEY UPDATE name = 'Jardín Once Unidos';

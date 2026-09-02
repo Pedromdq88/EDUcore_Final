@@ -1,15 +1,57 @@
 const API_BASE_URL = 'http://localhost:8080/api/v1';
-let currentSession = { email: '', role: '', institutionId: '88888888-4444-4444-4444-121212121212' };
+
+// Estado de sesión dinámico persistido por multi-tenant
+let currentSession = {
+  email: sessionStorage.getItem('current_user_email') || '',
+  role: sessionStorage.getItem('current_user_role') || '',
+  institutionId: sessionStorage.getItem('current_institution_id') || ''
+};
 
 let activeTutors = [];
 let activeStudents = [];
 let activeStaff = [];
+let activeSubjects = [];
+let portfoliosList = [];
+let announcementsList = [];
 
 let currentTutorData = null;
 let currentStaffData = null;
 let currentStudentData = null;
 
 let navigationHistory = [];
+
+const SECCIONES_SISTEMA = [
+  "1° Sección (3 años)",
+  "2° Sección (4 años)",
+  "3° Sección (5 años)",
+  "1° Grado",
+  "2° Grado",
+  "3° Grado",
+  "4° Grado",
+  "5° Grado",
+  "6° Grado"
+];
+
+// Helper global para peticiones HTTP Multi-Tenant blindadas
+async function apiFetch(endpoint, options = {}) {
+  if (!currentSession.institutionId) {
+    alert("Error: No se ha detectado la institución activa. Vuelva a iniciar sesión.");
+    throw new Error("Missing institutionId");
+  }
+
+  const defaultHeaders = {
+    'Content-Type': 'application/json',
+    'X-Institution-Id': currentSession.institutionId,
+    'X-User-Role': currentSession.role
+  };
+
+  options.headers = {
+    ...defaultHeaders,
+    ...options.headers
+  };
+
+  return fetch(`${API_BASE_URL}${endpoint}`, options);
+}
 
 function pushNavigation(viewType, entityId = null) {
   const last = navigationHistory[navigationHistory.length - 1];
@@ -18,22 +60,21 @@ function pushNavigation(viewType, entityId = null) {
   }
 }
 
-// Variables Globales del Módulo de Cuotas
+// Variables Globales de Cuotas
 let selectedStudentForCuotas = null;
 let studentFeesList = [];
-let institutionalEmails = {
-  receiptEmail: 'administracion@onceunidos.com',
-  feeQueryEmail: 'tesoreria@onceunidos.com'
-};
+let institutionalEmails = { receiptEmail: '', feeQueryEmail: '' };
+let isEditingCuotas = false;
+let tempFeesState = {};
 
-// Variables Globales del Módulo de Retiros y Restricciones
+// Variables Globales de Retiros y Restricciones
 let selectedStudentForRetiros = null;
 let currentStudentPickups = [];
 let selectedStudentForRestricciones = null;
 let currentStudentRestrictions = [];
 
 // ========================================================
-// REGLA DE CORTE ESCOLAR AL 30 DE JUNIO (SECCIONES OFICIALES)
+// REGLA DE CORTE ESCOLAR AL 30 DE JUNIO
 // ========================================================
 
 function calcularSala(fechaNacimientoStr, cicloLectivo = new Date().getFullYear()) {
@@ -42,8 +83,6 @@ function calcularSala(fechaNacimientoStr, cicloLectivo = new Date().getFullYear(
   const [anioNac, mesNac, diaNac] = fechaNacimientoStr.split('-').map(Number);
   if (!anioNac || !mesNac || !diaNac) return { valida: false, sala: "", error: "Fecha incompleta" };
 
-  // Corte al 30 de junio:
-  // Si nació entre julio y diciembre (mes >= 7), al 30/06 del ciclo aún no cumplió el año
   const edadAlCorte = mesNac >= 7
       ? (cicloLectivo - anioNac - 1)
       : (cicloLectivo - anioNac);
@@ -64,7 +103,6 @@ function calcularSala(fechaNacimientoStr, cicloLectivo = new Date().getFullYear(
   }
 }
 
-// Genera dinámicamente las opciones del Ciclo Lectivo alrededor del año actual
 function populateAcademicYearSelects() {
   const anioActual = new Date().getFullYear();
   const anios = [anioActual - 1, anioActual, anioActual + 1, anioActual + 2];
@@ -80,7 +118,6 @@ function populateAcademicYearSelects() {
   if (selEdicion) selEdicion.innerHTML = htmlOptions;
 }
 
-// Recalcular la sala en el formulario de alta de matrícula
 function recalcularSalaFormularioMatricula() {
   const birthDate = document.getElementById('studentBirthDate')?.value;
   const cicloLectivo = parseInt(document.getElementById('studentAcademicYear')?.value || new Date().getFullYear());
@@ -109,7 +146,6 @@ function recalcularSalaFormularioMatricula() {
   }
 }
 
-// Recalcular la sala en el modal de edición
 function recalcularSalaFormularioEdicion() {
   const birthDate = document.getElementById('edit-student-nacimiento')?.value;
   const cicloLectivo = parseInt(document.getElementById('edit-student-academicYear')?.value || new Date().getFullYear());
@@ -145,8 +181,16 @@ function handleLogin() {
   else if (email.includes('preceptor')) role = 'PRECEPTOR';
   else if (email.includes('tutor') || email.includes('padre')) role = 'TUTOR';
 
+  // Identificador de la institución activa asignado en la sesión
+  const detectedInstitutionId = "88888888-4444-4444-4444-121212121212";
+
   currentSession.email = email;
   currentSession.role = role;
+  currentSession.institutionId = detectedInstitutionId;
+
+  sessionStorage.setItem('current_user_email', email);
+  sessionStorage.setItem('current_user_role', role);
+  sessionStorage.setItem('current_institution_id', detectedInstitutionId);
 
   document.getElementById('userDisplay').innerText = email;
   document.getElementById('roleBadge').innerText =
@@ -162,7 +206,10 @@ function handleLogin() {
   refreshAllData();
 }
 
-function handleLogout() { location.reload(); }
+function handleLogout() {
+  sessionStorage.clear();
+  location.reload();
+}
 
 function showSection(sectionId, clearHistory = true) {
   if (clearHistory) {
@@ -179,6 +226,7 @@ function showSection(sectionId, clearHistory = true) {
   if (btn) btn.classList.add('bg-emerald-50', 'text-emerald-700');
 
   if (sectionId === 'inicioView') renderInicioFeed();
+  if (sectionId === 'materiasView') renderMateriasView();
   if (sectionId === 'cuotasView') renderCuotasView();
   if (sectionId === 'retirosView') renderRetirosView();
   if (sectionId === 'restriccionesView') renderRestriccionesView();
@@ -191,6 +239,7 @@ function refreshAllData() {
   fetchTutors();
   fetchStudents();
   fetchStaff();
+  fetchSubjects();
   fetchAnnouncements();
 }
 
@@ -210,14 +259,664 @@ function normalizarTexto(txt) {
 }
 
 // ========================================================
+// MÓDULO 1: GESTIÓN DE MATERIAS / ASIGNATURAS (CATÁLOGO)
+// ========================================================
+
+async function fetchSubjects() {
+  try {
+    const res = await apiFetch('/subjects');
+    activeSubjects = res.ok ? await res.json() : [];
+
+    const badge = document.getElementById('countSubjectsBadge');
+    if (badge) badge.innerText = activeSubjects.length;
+
+    renderMateriasList();
+  } catch (error) {
+    console.error("Error al cargar asignaturas:", error);
+  }
+}
+
+function renderMateriasView() {
+  renderMateriasList();
+}
+
+function renderMateriasList() {
+  const container = document.getElementById('materiasListContainer');
+  const countLabel = document.getElementById('labelTotalMaterias');
+  if (!container) return;
+
+  if (countLabel) countLabel.innerText = `${activeSubjects.length} Materias`;
+
+  if (activeSubjects.length === 0) {
+    container.innerHTML = `
+      <div class="col-span-3 p-6 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl">
+        No hay materias registradas. Agrega materias usando el formulario de la izquierda.
+      </div>
+    `;
+    return;
+  }
+
+  const esAdmin = ['DIRECTOR', 'ADMINISTRATIVE'].includes(currentSession.role);
+
+  container.innerHTML = activeSubjects.map(sub => `
+    <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between shadow-2xs hover:border-cyan-400 transition-all">
+      <div class="flex items-center gap-2">
+        <span class="material-icons-outlined text-cyan-700 text-sm">bookmark</span>
+        <span class="text-xs font-bold text-slate-800">${sub.name}</span>
+      </div>
+      ${esAdmin ? `
+        <button onclick="eliminarMateria('${sub.id}')" title="Eliminar materia" class="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 cursor-pointer transition-colors">
+          <span class="material-icons-outlined text-sm">delete</span>
+        </button>
+      ` : ''}
+    </div>
+  `).join('');
+}
+
+async function crearMateriaSubmit(e) {
+  e.preventDefault();
+  const input = document.getElementById('inputNombreMateria');
+  if (!input) return;
+
+  const raw = input.value.trim();
+  if (!raw) return;
+
+  // Capitalización de la primera letra
+  const formattedName = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+
+  try {
+    const res = await apiFetch('/subjects', {
+      method: 'POST',
+      body: JSON.stringify({ name: formattedName })
+    });
+
+    if (res.ok) {
+      input.value = '';
+      await fetchSubjects();
+    } else {
+      const err = await res.text();
+      alert(`No se pudo agregar la materia: ${err}`);
+    }
+  } catch (error) {
+    console.error("Error al crear materia:", error);
+  }
+}
+
+async function eliminarMateria(id) {
+  if (!confirm("¿Deseas eliminar esta materia del catálogo institucional?")) return;
+
+  try {
+    const res = await apiFetch(`/subjects/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      await fetchSubjects();
+    }
+  } catch (error) {
+    console.error("Error al eliminar materia:", error);
+  }
+}
+
+// ========================================================
+// MÓDULO 2: ASIGNACIONES DINÁMICAS (MATERIA + AULA)
+// ========================================================
+
+function generarFilaAsignacionDocenteHtml(data = {}) {
+  const subjectSelected = data.subject || (activeSubjects[0]?.name || 'Docente Titular de Sala');
+  const classroomSelected = data.classroom || '1° Sección (3 años)';
+  const shiftSelected = data.shift || 'MANANA';
+  const isTeacherSelected = data.isClassroomTeacher === true;
+
+  const subjectOptions = activeSubjects.length > 0
+      ? activeSubjects.map(s => `<option value="${s.name}" ${s.name === subjectSelected ? 'selected' : ''}>${s.name}</option>`).join('')
+      : `<option value="Docente Titular de Sala">Docente Titular de Sala</option>`;
+
+  const classroomOptions = SECCIONES_SISTEMA.map(c =>
+      `<option value="${c}" ${c === classroomSelected ? 'selected' : ''}>${c}</option>`
+  ).join('');
+
+  return `
+    <div class="asg-row bg-white p-3 rounded-xl border border-emerald-200 shadow-2xs grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+      <div class="sm:col-span-4">
+        <label class="block text-[10px] font-bold text-slate-500 uppercase">Materia / Asignatura</label>
+        <select class="asg-input-subject w-full p-1.5 bg-slate-50 border border-slate-200 rounded text-xs font-semibold text-slate-800">
+          ${subjectOptions}
+        </select>
+      </div>
+
+      <div class="sm:col-span-3">
+        <label class="block text-[10px] font-bold text-slate-500 uppercase">Aula / Sección</label>
+        <select class="asg-input-classroom w-full p-1.5 bg-slate-50 border border-slate-200 rounded text-xs font-medium text-slate-700">
+          ${classroomOptions}
+        </select>
+      </div>
+
+      <div class="sm:col-span-2">
+        <label class="block text-[10px] font-bold text-slate-500 uppercase">Turno</label>
+        <select class="asg-input-shift w-full p-1.5 bg-slate-50 border border-slate-200 rounded text-xs font-medium text-slate-700">
+          <option value="MANANA" ${shiftSelected === 'MANANA' ? 'selected' : ''}>Mañana</option>
+          <option value="TARDE" ${shiftSelected === 'TARDE' ? 'selected' : ''}>Tarde</option>
+          <option value="JORNADA_COMPLETA" ${shiftSelected === 'JORNADA_COMPLETA' ? 'selected' : ''}>J. Completa</option>
+        </select>
+      </div>
+
+      <div class="sm:col-span-2 flex items-center gap-1.5 pt-2 sm:pt-4">
+        <input type="checkbox" class="asg-input-teacher w-4 h-4 text-emerald-600 rounded cursor-pointer" ${isTeacherSelected ? 'checked' : ''}>
+        <span class="text-[11px] font-bold text-emerald-950 select-none">Profe de Aula</span>
+      </div>
+
+      <div class="sm:col-span-1 text-right pt-2 sm:pt-4">
+        <button type="button" onclick="this.closest('.asg-row').remove()" class="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 cursor-pointer">
+          <span class="material-icons-outlined text-base">delete</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function agregarFilaAsignacionDocente(modo, data = {}) {
+  const containerId = modo === 'alta' ? 'altaAssignmentsListContainer' : 'editAssignmentsListContainer';
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = generarFilaAsignacionDocenteHtml(data);
+  container.appendChild(wrapper.firstElementChild);
+}
+
+function recolectarAsignacionesDocente(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return [];
+
+  const rows = container.querySelectorAll('.asg-row');
+  const list = [];
+
+  rows.forEach(r => {
+    const subject = r.querySelector('.asg-input-subject')?.value;
+    const classroom = r.querySelector('.asg-input-classroom')?.value;
+    const shift = r.querySelector('.asg-input-shift')?.value || 'MANANA';
+    const isClassroomTeacher = r.querySelector('.asg-input-teacher')?.checked || false;
+
+    if (subject && classroom) {
+      list.push({
+        id: crypto.randomUUID(),
+        subject,
+        classroom,
+        shift,
+        isClassroomTeacher
+      });
+    }
+  });
+
+  return list;
+}
+
+// ========================================================
+// GESTIÓN DE PERSONAL / STAFF
+// ========================================================
+
+function toggleFormStaffCreate() {
+  toggleForm('staffFormContainer');
+  const container = document.getElementById('altaAssignmentsListContainer');
+  if (container && container.children.length === 0) {
+    agregarFilaAsignacionDocente('alta');
+  }
+}
+
+function handleStaffRoleChangeAlta(role) {
+  const block = document.getElementById('staffDocenteConfigBlock');
+  if (block) block.classList.toggle('hidden', role !== 'TEACHER');
+}
+
+function handleStaffRoleChangeEdicion(role) {
+  const block = document.getElementById('editStaffDocenteBlock');
+  if (block) block.classList.toggle('hidden', role !== 'TEACHER');
+}
+
+function renderStaffTable(list) {
+  const countBadge = document.getElementById('countStaffBadge');
+  if (countBadge) countBadge.innerText = list ? list.length : 0;
+
+  const tbody = document.getElementById('staffTableBody');
+  if (!tbody) return;
+
+  if (!list || list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400 text-xs">No hay miembros del personal registrados.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = list.map(u => {
+    let assignmentsBadges = '';
+    if (u.assignments && u.assignments.length > 0) {
+      assignmentsBadges = u.assignments.map(a => `
+        <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded mr-1 mb-1 ${a.isClassroomTeacher ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-cyan-50 text-cyan-800 border border-cyan-200'}">
+          ${a.isClassroomTeacher ? '★ ' : ''}${a.subject} (${a.classroom})
+        </span>
+      `).join('');
+    } else if (u.classroom) {
+      assignmentsBadges = `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded">★ Docente de ${u.classroom}</span>`;
+    }
+
+    return `
+      <tr class="hover:bg-slate-50/80 transition-colors">
+        <td class="p-3 font-semibold text-slate-900">${u.lastName || ''}, ${u.firstName || ''}</td>
+        <td class="p-3 text-slate-600 font-medium">${u.email || '--'}</td>
+        <td class="p-3">
+          <div class="mb-1"><span class="bg-slate-100 text-slate-700 text-xs font-bold px-2 py-0.5 rounded">${u.role || 'STAFF'}</span></div>
+          <div class="flex flex-wrap">${assignmentsBadges}</div>
+        </td>
+        <td class="p-3 text-center">
+          <button onclick="viewStaffProfile('${u.id}')" class="text-slate-400 hover:text-emerald-600 p-1 rounded-full hover:bg-slate-100 cursor-pointer">
+            <span class="material-icons-outlined">contact_page</span>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function fetchStaff() {
+  try {
+    const r = await apiFetch('/institution/staff');
+    activeStaff = r.ok ? await r.json() : [];
+    renderStaffTable(activeStaff);
+  } catch(e) {
+    console.error("Error staff:", e);
+    renderStaffTable([]);
+  }
+}
+
+function filterStaffTable() {
+  const targetRole = document.getElementById('filterStaffRole')?.value;
+  if (!targetRole || targetRole === 'TODOS') {
+    renderStaffTable(activeStaff);
+  } else {
+    renderStaffTable(activeStaff.filter(u => u.role === targetRole));
+  }
+}
+
+async function submitStaff() {
+  const role = document.getElementById('staffRole')?.value;
+  const hireDateValue = document.getElementById('staffHireDate')?.value;
+  const firstName = document.getElementById('staffFirstName')?.value.trim() || '';
+  const lastName = document.getElementById('staffLastName')?.value.trim() || '';
+  const email = document.getElementById('staffEmail')?.value.trim() || '';
+  const phone = document.getElementById('staffPhone')?.value.trim() || '';
+
+  if (!firstName || !lastName || !email) {
+    alert("Nombre, apellido y correo institucional son obligatorios.");
+    return;
+  }
+  if (!hireDateValue) {
+    alert("La fecha de contratación es obligatoria.");
+    return;
+  }
+
+  const assignments = role === 'TEACHER' ? recolectarAsignacionesDocente('altaAssignmentsListContainer') : [];
+  const primaryClass = assignments.find(a => a.isClassroomTeacher)?.classroom || (assignments[0]?.classroom || null);
+
+  const payload = {
+    id: crypto.randomUUID(),
+    firstName,
+    lastName,
+    email,
+    password: "123",
+    role,
+    phone,
+    hireDate: hireDateValue,
+    classroom: primaryClass,
+    status: "ACTIVE",
+    tenantId: currentSession.institutionId,
+    assignments
+  };
+
+  try {
+    const response = await apiFetch('/institution/staff', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(err || "Error al registrar personal en el servidor");
+    }
+
+    document.getElementById('staffFirstName').value = '';
+    document.getElementById('staffLastName').value = '';
+    document.getElementById('staffEmail').value = '';
+    document.getElementById('staffPhone').value = '';
+    document.getElementById('staffHireDate').value = '';
+    document.getElementById('altaAssignmentsListContainer').innerHTML = '';
+    toggleForm('staffFormContainer');
+
+    alert("¡Personal y asignaciones guardadas exitosamente!");
+    await fetchStaff();
+
+  } catch (error) {
+    console.error("Error en alta staff:", error);
+    alert(`No se pudo registrar al personal: ${error.message}`);
+  }
+}
+
+function viewStaffProfile(id) {
+  const staffMember = activeStaff.find(u => u.id === id);
+  if (!staffMember) return;
+  currentStaffData = staffMember;
+
+  let cursosAsignados = [];
+  if (staffMember.assignments && staffMember.assignments.length > 0) {
+    cursosAsignados = staffMember.assignments.map(a => ({
+      nombre: a.subject,
+      seccion: a.classroom,
+      turno: a.shift === 'MANANA' ? 'Turno Mañana' : (a.shift === 'TARDE' ? 'Turno Tarde' : 'J. Completa'),
+      cantidadAlumnos: activeStudents.filter(s => s.classroom === a.classroom).length,
+      rol: a.isClassroomTeacher ? 'Docente de Aula / Titular' : 'Profesor de Asignatura',
+      isClassroomTeacher: a.isClassroomTeacher
+    }));
+  } else if (staffMember.classroom) {
+    cursosAsignados = [{
+      nombre: "Docente Titular de Sala",
+      seccion: staffMember.classroom,
+      turno: "Turno Mañana",
+      cantidadAlumnos: activeStudents.filter(s => s.classroom === staffMember.classroom).length,
+      rol: 'Docente Titular',
+      isClassroomTeacher: true
+    }];
+  }
+
+  setDocenteData({
+    id: staffMember.id,
+    nombre: staffMember.firstName || '',
+    apellido: staffMember.lastName || '',
+    legajo: staffMember.id ? staffMember.id.substring(0, 8) : '-',
+    cargo: staffMember.role || 'STAFF',
+    estado: 'ACTIVO',
+    dni: staffMember.documentNumber || '-',
+    email: staffMember.email || '-',
+    telefono: staffMember.phone || '-',
+    fechaIngreso: staffMember.hireDate || '-',
+    cursos: cursosAsignados
+  });
+
+  fetchDocentePortfolios(staffMember.id);
+  evaluarPermisosBajaStaff();
+}
+
+function setDocenteData(data) {
+  if (!data) return;
+
+  document.querySelectorAll('.dashboard-view').forEach(v => v.classList.add('hidden'));
+  document.getElementById('staffProfileView').classList.remove('hidden');
+
+  const nombreCompleto = `${data.nombre || ''} ${data.apellido || ''}`.trim() || 'Sin Nombre';
+  document.getElementById('docente-nombre').textContent = nombreCompleto;
+  document.getElementById('docente-avatar').textContent = getInitials(nombreCompleto);
+  document.getElementById('docente-legajo').textContent = `Legajo: ${data.legajo || '-'}`;
+  document.getElementById('docente-cargo').textContent = `Cargo: ${data.cargo || '-'}`;
+  document.getElementById('docente-estado').textContent = `Estado: ${data.estado || 'ACTIVO'}`;
+  document.getElementById('docente-dni').textContent = data.dni || '-';
+  document.getElementById('docente-email').textContent = data.email || '-';
+  document.getElementById('docente-telefono').textContent = data.telefono || '-';
+  document.getElementById('docente-ingreso').textContent = data.fechaIngreso || '-';
+
+  const cursosCont = document.getElementById('cursos-container');
+  cursosCont.innerHTML = '';
+
+  if (data.cursos && data.cursos.length > 0) {
+    data.cursos.forEach(c => {
+      const item = document.createElement('div');
+      item.className = 'bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-1.5';
+      item.innerHTML = `
+        <div class="flex justify-between items-start">
+          <h4 class="font-bold text-slate-800 text-xs">${c.nombre}</h4>
+          ${c.isClassroomTeacher ? '<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-300">Docente de Aula</span>' : ''}
+        </div>
+        <p class="text-[11px] text-slate-500">${c.seccion} | ${c.turno}</p>
+        <span class="bg-teal-50 text-teal-800 border border-teal-200 text-[10px] font-bold px-2 py-0.5 rounded inline-block">${c.rol}</span>
+      `;
+      cursosCont.appendChild(item);
+    });
+  } else {
+    cursosCont.innerHTML = '<p class="text-xs text-slate-400 col-span-3">No posee asignaciones registradas.</p>';
+  }
+}
+
+function hideStaffProfile() {
+  document.getElementById('staffProfileView').classList.add('hidden');
+  document.getElementById('staffView').classList.remove('hidden');
+}
+
+function abrirModalEdicionStaff() {
+  if (!currentStaffData) return;
+
+  document.getElementById('edit-staff-nombre').value = currentStaffData.firstName || '';
+  document.getElementById('edit-staff-apellido').value = currentStaffData.lastName || '';
+  document.getElementById('edit-staff-email').value = currentStaffData.email || '';
+  document.getElementById('edit-staff-role').value = currentStaffData.role || 'TEACHER';
+  document.getElementById('edit-staff-dni').value = currentStaffData.documentNumber || '';
+  document.getElementById('edit-staff-phone').value = currentStaffData.phone || '';
+
+  const container = document.getElementById('editAssignmentsListContainer');
+  container.innerHTML = '';
+
+  const asgs = currentStaffData.assignments || [];
+  if (asgs.length > 0) {
+    asgs.forEach(a => agregarFilaAsignacionDocente('edit', a));
+  } else {
+    agregarFilaAsignacionDocente('edit');
+  }
+
+  handleStaffRoleChangeEdicion(currentStaffData.role || 'TEACHER');
+  document.getElementById('staffEditModal').classList.remove('hidden');
+}
+
+function cerrarModalEdicionStaff() {
+  document.getElementById('staffEditModal').classList.add('hidden');
+}
+
+async function guardarDatosStaff(e) {
+  e.preventDefault();
+  if (!currentStaffData || !currentStaffData.id) return;
+
+  const role = document.getElementById('edit-staff-role').value;
+  const assignments = role === 'TEACHER' ? recolectarAsignacionesDocente('editAssignmentsListContainer') : [];
+  const primaryClass = assignments.find(a => a.isClassroomTeacher)?.classroom || (assignments[0]?.classroom || null);
+
+  const updatedPayload = {
+    ...currentStaffData,
+    firstName: document.getElementById('edit-staff-nombre').value.trim(),
+    lastName: document.getElementById('edit-staff-apellido').value.trim(),
+    email: document.getElementById('edit-staff-email').value.trim(),
+    role,
+    documentNumber: document.getElementById('edit-staff-dni').value.trim(),
+    phone: document.getElementById('edit-staff-phone').value.trim(),
+    classroom: primaryClass,
+    assignments
+  };
+
+  try {
+    const response = await apiFetch(`/institution/staff/${currentStaffData.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updatedPayload)
+    });
+
+    if (!response.ok) throw new Error("Error al actualizar datos en el servidor");
+
+    const usuarioActualizado = await response.json();
+    alert("¡Legajo y asignaciones actualizadas!");
+
+    currentStaffData = usuarioActualizado;
+    cerrarModalEdicionStaff();
+    await fetchStaff();
+    viewStaffProfile(usuarioActualizado.id);
+
+  } catch (error) {
+    console.error("Error al actualizar:", error);
+    alert("No se pudo actualizar el legajo.");
+  }
+}
+
+function evaluarPermisosBajaStaff() {
+  const btnBaja = document.getElementById('btn-baja-staff');
+  if (btnBaja) {
+    btnBaja.classList.toggle('hidden', !['DIRECTOR', 'ADMINISTRATIVE'].includes(currentSession.role));
+  }
+}
+
+function calcularTiempoTrabajado(fechaIngresoStr) {
+  if (!fechaIngresoStr) return "Tiempo no especificado";
+  const fechaIngreso = new Date(fechaIngresoStr);
+  const fechaActual = new Date();
+  if (isNaN(fechaIngreso.getTime())) return "Fecha no disponible";
+
+  let anios = fechaActual.getFullYear() - fechaIngreso.getFullYear();
+  let meses = fechaActual.getMonth() - fechaIngreso.getMonth();
+  if (meses < 0) { anios--; meses += 12; }
+  const totalMeses = (anios * 12) + meses;
+  return `${anios} años y ${meses} meses (${totalMeses} meses acumulados)`;
+}
+
+async function confirmarBajaStaff() {
+  if (!currentStaffData || !currentStaffData.id) return;
+
+  const nombreCompleto = `${currentStaffData.firstName || ''} ${currentStaffData.lastName || ''}`.trim();
+  const fechaIngreso = currentStaffData.hireDate;
+  const tiempoTrabajado = calcularTiempoTrabajado(fechaIngreso);
+
+  const confirmacion = confirm(
+      `¿Dar de baja al docente/personal "${nombreCompleto}"?\n\n` +
+      `Antigüedad: ${tiempoTrabajado}\nFecha ingreso: ${fechaIngreso || 'N/D'}`
+  );
+  if (!confirmacion) return;
+
+  try {
+    const response = await apiFetch(`/institution/staff/${currentStaffData.id}/baja`, {
+      method: 'POST'
+    });
+
+    if (response.ok) {
+      alert("Personal dado de baja correctamente y archivado en histórico.");
+      hideStaffProfile();
+      await fetchStaff();
+    } else {
+      alert("Error al dar de baja en el servidor.");
+    }
+  } catch (error) {
+    console.error("Error baja staff:", error);
+  }
+}
+
+// ========================================================
+// MÓDULO 3: PORTFOLIO PROFESIONAL EN EL LEGAJO (LINKEDIN)
+// ========================================================
+
+async function fetchDocentePortfolios(staffId) {
+  try {
+    const res = await apiFetch(`/portfolios?staffId=${staffId}`);
+    portfoliosList = res.ok ? await res.json() : [];
+    renderDocentePortfolios();
+  } catch (e) {
+    console.error("Error portfolios:", e);
+  }
+}
+
+function renderDocentePortfolios() {
+  const container = document.getElementById('docente-portfolios-container');
+  if (!container) return;
+
+  if (portfoliosList.length === 0) {
+    container.innerHTML = `
+      <div class="col-span-2 p-5 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">
+        Este docente aún no ha registrado cursos, capacitaciones o títulos en su portfolio profesional.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = portfoliosList.map(p => `
+    <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col justify-between space-y-2 hover:border-amber-400 transition-all">
+      <div>
+        <div class="flex justify-between items-start mb-1">
+          <span class="bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-bold px-2 py-0.5 rounded uppercase">${p.category}</span>
+          <span class="text-[10px] font-semibold text-slate-400">${p.activityDate || '-'}</span>
+        </div>
+        <h4 class="text-xs font-bold text-slate-900">${p.title}</h4>
+        <p class="text-[11px] text-slate-600 mt-1 leading-relaxed">${p.description}</p>
+      </div>
+
+      <div class="pt-2 border-t border-slate-200/70 flex justify-between items-center">
+        ${p.mediaUrl ? `
+          <a href="${p.mediaUrl}" target="_blank" class="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 hover:underline">
+            <span class="material-icons-outlined text-xs">folder_open</span> Ver Certificado Digital
+          </a>
+        ` : '<span></span>'}
+        <button onclick="eliminarPortfolioDocente('${p.id}')" title="Eliminar registro" class="text-slate-400 hover:text-rose-600 cursor-pointer">
+          <span class="material-icons-outlined text-sm">delete</span>
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function abrirModalNuevoPortfolio() {
+  const form = document.getElementById('formPortfolio');
+  if (form) form.reset();
+
+  document.getElementById('portfolioEditId').value = '';
+  document.getElementById('portfolioActivityDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('portfolioModal').classList.remove('hidden');
+}
+
+function cerrarModalPortfolio() {
+  document.getElementById('portfolioModal').classList.add('hidden');
+}
+
+async function guardarPortfolio(e) {
+  e.preventDefault();
+  if (!currentStaffData) return;
+
+  const payload = {
+    staffId: currentStaffData.id,
+    title: document.getElementById('portfolioTitle').value.trim(),
+    category: document.getElementById('portfolioCategory').value,
+    activityDate: document.getElementById('portfolioActivityDate').value,
+    description: document.getElementById('portfolioDescription').value.trim(),
+    mediaUrl: document.getElementById('portfolioMediaUrl').value.trim() || null
+  };
+
+  try {
+    const res = await apiFetch('/portfolios', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      cerrarModalPortfolio();
+      await fetchDocentePortfolios(currentStaffData.id);
+    }
+  } catch (error) {
+    console.error("Error al guardar portfolio:", error);
+  }
+}
+
+async function eliminarPortfolioDocente(id) {
+  if (!confirm("¿Deseas eliminar este certificado del portfolio?")) return;
+
+  try {
+    const res = await apiFetch(`/portfolios/${id}`, { method: 'DELETE' });
+    if (res.ok && currentStaffData) {
+      fetchDocentePortfolios(currentStaffData.id);
+    }
+  } catch (error) {
+    console.error("Error al eliminar portfolio:", error);
+  }
+}
+
+// ========================================================
 // GESTIÓN DE TUTORES
 // ========================================================
 
 async function fetchTutors() {
   try {
-    const r = await fetch(`${API_BASE_URL}/tutors`, {
-      headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }
-    });
+    const r = await apiFetch('/tutors');
     activeTutors = r.ok ? await r.json() : [];
     document.getElementById('countTutorsBadge').innerText = activeTutors.length;
 
@@ -235,7 +934,7 @@ async function fetchTutors() {
     `).join('');
 
     populateTutorSelects();
-  } catch(e) { console.error("Error consultando tutores:", e); }
+  } catch(e) { console.error("Error tutores:", e); }
 }
 
 function populateTutorSelects() {
@@ -255,9 +954,8 @@ async function submitTutor() {
     phone: document.getElementById('tutorPhone').value.trim(),
     email: document.getElementById('tutorEmail').value.trim()
   };
-  await fetch(`${API_BASE_URL}/tutors`, {
+  await apiFetch('/tutors', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role },
     body: JSON.stringify(payload)
   });
   toggleForm('tutorFormContainer');
@@ -266,10 +964,7 @@ async function submitTutor() {
 
 async function viewTutorProfile(id, isBackNavigation = false) {
   const t = activeTutors.find(item => item.id === id);
-  if(!t) {
-    alert("No se encontraron los datos de este tutor.");
-    return;
-  }
+  if(!t) { alert("Tutor no encontrado."); return; }
 
   if (!isBackNavigation) {
     if (currentStudentData && !document.getElementById('studentProfileView').classList.contains('hidden')) {
@@ -282,9 +977,7 @@ async function viewTutorProfile(id, isBackNavigation = false) {
   let hijosVinculados = activeStudents.filter(s => {
     if (Array.isArray(s.tutorIds) && s.tutorIds.includes(t.id)) return true;
     if (Array.isArray(s.tutors) && s.tutors.some(tut => (tut.id === t.id || tut.tutorId === t.id))) return true;
-    if (Array.isArray(s.tutores) && s.tutores.some(tut => (tut.id === t.id || tut.tutorId === t.id))) return true;
-    if (s.tutorId === t.id || s.primaryTutorId === t.id || s.secondaryTutorId === t.id) return true;
-    return false;
+    return s.tutorId === t.id;
   }).map(s => ({
     id: s.id,
     nombre: s.firstName,
@@ -292,28 +985,6 @@ async function viewTutorProfile(id, isBackNavigation = false) {
     curso: s.classroom,
     parentesco: t.relationship || 'Hijo/a'
   }));
-
-  if (hijosVinculados.length === 0) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/tutors/${t.id}/students`, {
-        headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }
-      });
-      if (res.ok) {
-        const dataHijos = await res.json();
-        if (Array.isArray(dataHijos) && dataHijos.length > 0) {
-          hijosVinculados = dataHijos.map(s => ({
-            id: s.id,
-            nombre: s.firstName,
-            apellido: s.lastName,
-            curso: s.classroom,
-            parentesco: t.relationship || 'Hijo/a'
-          }));
-        }
-      }
-    } catch (err) {
-      console.warn("No se pudo consultar el endpoint de hijos:", err);
-    }
-  }
 
   setTutorData({
     id: t.id,
@@ -340,20 +1011,14 @@ function setTutorData(data) {
   document.querySelectorAll('.dashboard-view').forEach(v => v.classList.add('hidden'));
   document.getElementById('tutorProfileView').classList.remove('hidden');
 
-  const nombreCompleto = `${data.nombre || data.firstName || ''} ${data.apellido || data.lastName || ''}`.trim() || 'Sin Nombre';
+  const nombreCompleto = `${data.nombre || ''} ${data.apellido || ''}`.trim() || 'Sin Nombre';
   document.getElementById('tutor-nombre').textContent = nombreCompleto;
   document.getElementById('tutor-avatar').textContent = getInitials(nombreCompleto);
-  document.getElementById('tutor-vinculo').textContent = `Vínculo: ${data.vinculo || data.relationship || '-'}`;
-  document.getElementById('tutor-dni').textContent = `DNI: ${data.dni || data.documentNumber || '-'}`;
-
-  document.getElementById('tutor-nacionalidad').textContent = data.nacionalidad || '-';
-  document.getElementById('tutor-profesion').textContent = data.profesion || '-';
-  document.getElementById('tutor-actividad').textContent = data.condicionActividad || '-';
-  document.getElementById('tutor-celular').textContent = data.celular || data.phone || '-';
-  document.getElementById('tutor-fijo').textContent = data.telefonoFijo || '-';
+  document.getElementById('tutor-vinculo').textContent = `Vínculo: ${data.vinculo || '-'}`;
+  document.getElementById('tutor-dni').textContent = `DNI: ${data.dni || '-'}`;
+  document.getElementById('tutor-celular').textContent = data.celular || '-';
   document.getElementById('tutor-email').textContent = data.email || '-';
-  document.getElementById('tutor-convive').textContent = data.conviveEstudiante || data.convive || 'Sí';
-  document.getElementById('tutor-domicilio').textContent = data.domicilio || data.direccion || '-';
+  document.getElementById('tutor-domicilio').textContent = data.domicilio || '-';
 
   const hijosCont = document.getElementById('hijos-container');
   hijosCont.innerHTML = '';
@@ -361,26 +1026,24 @@ function setTutorData(data) {
   if (data.hijos && data.hijos.length > 0) {
     data.hijos.forEach(h => {
       const item = document.createElement('div');
-      item.className = 'student-item bg-slate-50 border border-slate-200 rounded-lg p-3 flex justify-between items-center cursor-pointer hover:border-emerald-500 transition-all';
+      item.className = 'bg-slate-50 border border-slate-200 rounded-lg p-3 flex justify-between items-center cursor-pointer hover:border-emerald-500 transition-all';
       item.onclick = () => showStudentProfile(h.id);
       item.innerHTML = `
         <div>
-            <h4 class="font-bold text-slate-800 text-sm">${h.nombre || h.firstName} ${h.apellido || h.lastName}</h4>
-            <p class="text-xs text-slate-500">Curso: ${h.curso || h.classroom || '-'}</p>
+          <h4 class="font-bold text-slate-800 text-sm">${h.nombre} ${h.apellido}</h4>
+          <p class="text-xs text-slate-500">Sección: ${h.curso || '-'}</p>
         </div>
-        <span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded">${h.parentesco || 'Hijo/a'}</span>`;
+        <span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded">${h.parentesco || 'Hijo/a'}</span>
+      `;
       hijosCont.appendChild(item);
     });
   } else {
     hijosCont.innerHTML = '<p class="text-xs text-slate-400 col-span-2">No hay alumnos vinculados registrados.</p>';
   }
-
-  evaluarPermisosPerfilTutor();
 }
 
 function hideTutorProfile() {
   document.getElementById('tutorProfileView').classList.add('hidden');
-
   const previous = navigationHistory.pop();
   if (previous) {
     if (previous.viewType === 'studentProfileView' && previous.entityId) {
@@ -393,42 +1056,15 @@ function hideTutorProfile() {
   }
 }
 
-function evaluarPermisosPerfilTutor() {
-  const btnEdit = document.getElementById('btn-edit-tutor');
-  const btnBaja = document.getElementById('btn-baja-tutor');
-  const role = currentSession.role;
-
-  if (btnEdit) {
-    if (['DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER', 'TUTOR'].includes(role)) {
-      btnEdit.classList.remove('hidden');
-    } else {
-      btnEdit.classList.add('hidden');
-    }
-  }
-
-  if (btnBaja) {
-    if (['DIRECTOR', 'ADMINISTRATIVE'].includes(role)) {
-      btnBaja.classList.remove('hidden');
-    } else {
-      btnBaja.classList.add('hidden');
-    }
-  }
-}
-
 function abrirModalEdicionTutor() {
   if (!currentTutorData) return;
-  document.getElementById('edit-nombre').value = currentTutorData.nombre || currentTutorData.firstName || '';
-  document.getElementById('edit-apellido').value = currentTutorData.apellido || currentTutorData.lastName || '';
-  document.getElementById('edit-vinculo').value = currentTutorData.vinculo || currentTutorData.relationship || 'Madre';
-  document.getElementById('edit-dni').value = currentTutorData.dni || currentTutorData.documentNumber || '';
-  document.getElementById('edit-nacionalidad').value = currentTutorData.nacionalidad || 'Argentina';
-  document.getElementById('edit-profesion').value = currentTutorData.profesion || '';
-  document.getElementById('edit-actividad').value = currentTutorData.condicionActividad || 'Trabaja';
-  document.getElementById('edit-celular').value = currentTutorData.celular || currentTutorData.phone || '';
+  document.getElementById('edit-nombre').value = currentTutorData.nombre || '';
+  document.getElementById('edit-apellido').value = currentTutorData.apellido || '';
+  document.getElementById('edit-vinculo').value = currentTutorData.vinculo || 'Madre';
+  document.getElementById('edit-dni').value = currentTutorData.dni || '';
+  document.getElementById('edit-celular').value = currentTutorData.celular || '';
   document.getElementById('edit-email').value = currentTutorData.email || '';
-  document.getElementById('edit-calle').value = currentTutorData.domicilio || currentTutorData.direccion || '';
-  document.getElementById('edit-convive').value = currentTutorData.conviveEstudiante || currentTutorData.convive || 'Sí';
-
+  document.getElementById('edit-calle').value = currentTutorData.domicilio || '';
   document.getElementById('tutorEditModal').classList.remove('hidden');
 }
 
@@ -438,7 +1074,7 @@ function cerrarModalEdicionTutor() {
 
 async function guardarDatosTutor(e) {
   e.preventDefault();
-  if (!currentTutorData || !currentTutorData.id) return;
+  if (!currentTutorData?.id) return;
 
   const updatedData = {
     ...currentTutorData,
@@ -446,104 +1082,51 @@ async function guardarDatosTutor(e) {
     lastName: document.getElementById('edit-apellido').value.trim(),
     relationship: document.getElementById('edit-vinculo').value,
     documentNumber: document.getElementById('edit-dni').value.trim(),
-    nacionalidad: document.getElementById('edit-nacionalidad').value.trim(),
-    profesion: document.getElementById('edit-profesion').value.trim(),
-    condicionActividad: document.getElementById('edit-actividad').value,
     phone: document.getElementById('edit-celular').value.trim(),
     email: document.getElementById('edit-email').value.trim(),
-    direccion: document.getElementById('edit-calle').value.trim(),
-    convive: document.getElementById('edit-convive').value
+    direccion: document.getElementById('edit-calle').value.trim()
   };
 
   try {
-    const response = await fetch(`${API_BASE_URL}/tutors/${currentTutorData.id}`, {
+    await apiFetch(`/tutors/${currentTutorData.id}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      },
       body: JSON.stringify(updatedData)
     });
-
-    let finalTutor = updatedData;
-    if (response.ok) {
-      try {
-        const json = await response.json();
-        if (json && json.id) finalTutor = { ...updatedData, ...json };
-      } catch (_) {}
-    }
-
-    const idx = activeTutors.findIndex(t => t.id === currentTutorData.id);
-    if (idx !== -1) {
-      activeTutors[idx] = { ...activeTutors[idx], ...finalTutor };
-    }
-
     cerrarModalEdicionTutor();
-    setTutorData(finalTutor);
     await fetchTutors();
-
+    viewTutorProfile(currentTutorData.id, true);
   } catch (error) {
     console.error("Error al actualizar tutor:", error);
-    cerrarModalEdicionTutor();
-    setTutorData(updatedData);
   }
 }
 
 async function confirmarBajaTutor() {
-  if (!currentTutorData || !currentTutorData.id) {
-    alert("No se pudo identificar la ficha del tutor a dar de baja.");
-    return;
-  }
-
-  const nombreCompleto = `${currentTutorData.nombre || currentTutorData.firstName || ''} ${currentTutorData.apellido || currentTutorData.lastName || ''}`.trim();
-
-  const confirmacion = confirm(
-      `¿Estás seguro de que deseas dar de baja al tutor "${nombreCompleto}"?\n\n` +
-      `ATENCIÓN: Si este tutor es el ÚNICO responsable asignado a sus alumnos vinculados, los alumnos también serán dados de baja e ingresados al registro histórico automáticamente.`
-  );
-
-  if (!confirmacion) return;
+  if (!currentTutorData?.id) return;
+  if (!confirm(`¿Dar de baja al tutor "${currentTutorData.nombre} ${currentTutorData.apellido}"?`)) return;
 
   try {
-    const response = await fetch(`${API_BASE_URL}/tutors/${currentTutorData.id}/baja`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      }
-    });
-
-    if (response.ok || response.status === 200 || response.status === 204) {
-      alert(`Baja procesada con éxito.\nEl tutor y los alumnos sin otros tutores asignados pasaron al registro histórico.`);
+    const res = await apiFetch(`/tutors/${currentTutorData.id}/baja`, { method: 'POST' });
+    if (res.ok) {
+      alert("Tutor procesado con éxito.");
       hideTutorProfile();
       await refreshAllData();
-      showSection('tutorsView');
-    } else {
-      const errorMsg = await response.text();
-      alert(`No se pudo procesar la baja en el servidor: ${errorMsg || 'Error desconocido'}`);
     }
-
   } catch (error) {
-    console.error("Error al procesar la baja del tutor:", error);
-    alert("Hubo un fallo de red o conexión con el servidor al intentar dar de baja.");
+    console.error("Error baja tutor:", error);
   }
 }
 
 // ========================================================
-// GESTIÓN DE ALUMNOS
+// GESTIÓN DE ALUMNOS Y MATRÍCULAS
 // ========================================================
 
 async function fetchStudents() {
   try {
-    const r = await fetch(`${API_BASE_URL}/students`, {
-      headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }
-    });
+    const r = await apiFetch('/students');
     activeStudents = r.ok ? await r.json() : [];
     renderStudentsTable(activeStudents);
   } catch(e) {
-    console.error("Error al consultar estudiantes:", e);
+    console.error("Error estudiantes:", e);
     renderStudentsTable([]);
   }
 }
@@ -577,101 +1160,9 @@ function filterStudentsTable() {
   else { renderStudentsTable(activeStudents.filter(s => s.classroom === target)); }
 }
 
-function openEditStudentModal() {
-  if (!currentStudentData) {
-    alert("No se pudo cargar la información del alumno para editar.");
-    return;
-  }
-
-  populateAcademicYearSelects();
-
-  document.getElementById('edit-student-nombre').value = currentStudentData.firstName || '';
-  document.getElementById('edit-student-apellido').value = currentStudentData.lastName || '';
-  document.getElementById('edit-student-legajo').value = currentStudentData.legajoNumber || currentStudentData.legajo || '';
-  document.getElementById('edit-student-dni').value = currentStudentData.documentNumber || '';
-  document.getElementById('edit-student-nacimiento').value = currentStudentData.birthDate || '';
-  document.getElementById('edit-student-direccion').value = currentStudentData.address || currentStudentData.direccion || '';
-
-  const anioAlumno = currentStudentData.academicYear || new Date().getFullYear();
-  const selAnio = document.getElementById('edit-student-academicYear');
-  if (selAnio) selAnio.value = anioAlumno;
-
-  recalcularSalaFormularioEdicion();
-
-  document.getElementById('studentEditModal').classList.remove('hidden');
-}
-
-function closeEditStudentModal() {
-  document.getElementById('studentEditModal').classList.add('hidden');
-}
-
-async function guardarDatosAlumno(e) {
-  e.preventDefault();
-  if (!currentStudentData || !currentStudentData.id) return;
-
-  const legajoVal = document.getElementById('edit-student-legajo').value.trim();
-  const dirVal = document.getElementById('edit-student-direccion').value.trim();
-  const academicYearVal = parseInt(document.getElementById('edit-student-academicYear')?.value || new Date().getFullYear());
-  const birthDateVal = document.getElementById('edit-student-nacimiento').value;
-
-  const checkSala = calcularSala(birthDateVal, academicYearVal);
-  if (!checkSala.valida) {
-    alert(checkSala.error);
-    return;
-  }
-
-  const updatedPayload = {
-    ...currentStudentData,
-    firstName: document.getElementById('edit-student-nombre').value.trim(),
-    lastName: document.getElementById('edit-student-apellido').value.trim(),
-    legajoNumber: legajoVal,
-    legajo: legajoVal,
-    documentNumber: document.getElementById('edit-student-dni').value.trim(),
-    birthDate: birthDateVal,
-    academicYear: academicYearVal,
-    classroom: checkSala.sala,
-    address: dirVal,
-    direccion: dirVal
-  };
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/students/${currentStudentData.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      },
-      body: JSON.stringify(updatedPayload)
-    });
-
-    if (!response.ok) {
-      let errorMsg = "Error al actualizar la ficha del alumno en el servidor";
-      try {
-        const errorJson = await response.json();
-        errorMsg = errorJson.message || errorMsg;
-      } catch (_) {}
-      throw new Error(errorMsg);
-    }
-
-    alert(`¡Ficha del alumno actualizada con éxito! Sección: ${checkSala.sala}`);
-    closeEditStudentModal();
-
-    await fetchStudents();
-    await showStudentProfile(currentStudentData.id, true);
-
-  } catch (error) {
-    console.error("Error al actualizar alumno:", error);
-    alert(error.message);
-  }
-}
-
 async function showStudentProfile(studentId, isBackNavigation = false) {
   try {
-    const response = await fetch(`${API_BASE_URL}/students/${studentId}`, {
-      headers: { 'X-Institution-Id': currentSession.institutionId, 'X-User-Role': currentSession.role }
-    });
-
+    const response = await apiFetch(`/students/${studentId}`);
     if (!response.ok) throw new Error("Error al consultar el perfil");
     const data = await response.json();
 
@@ -701,19 +1192,14 @@ async function showStudentProfile(studentId, isBackNavigation = false) {
     document.getElementById('alumno-nacimiento').textContent = data.birthDate || '-';
     document.getElementById('alumno-domicilio').textContent = data.address || data.direccion || '-';
 
-    const btnBajaAlumno = document.getElementById('btn-baja-alumno');
-    if (btnBajaAlumno) {
-      if (['DIRECTOR', 'ADMINISTRATIVE'].includes(currentSession.role)) {
-        btnBajaAlumno.classList.remove('hidden');
-      } else {
-        btnBajaAlumno.classList.add('hidden');
-      }
+    const btnBaja = document.getElementById('btn-baja-alumno');
+    if (btnBaja) {
+      btnBaja.classList.toggle('hidden', !['DIRECTOR', 'ADMINISTRATIVE'].includes(currentSession.role));
     }
 
     const tutoresCont = document.getElementById('tutores-container');
     tutoresCont.innerHTML = '';
     let listaTutores = data.tutors || data.tutores || [];
-
     if (listaTutores.length === 0 && activeTutors.length > 0 && data.tutorIds) {
       listaTutores = activeTutors.filter(t => data.tutorIds.includes(t.id));
     }
@@ -723,10 +1209,7 @@ async function showStudentProfile(studentId, isBackNavigation = false) {
         const isPrimary = index === 0;
         const card = document.createElement('div');
         card.className = "p-4 bg-white border border-slate-200 rounded-xl shadow-xs hover:border-emerald-500 transition-all cursor-pointer flex justify-between items-center group mb-2";
-
-        const tutorIdTarget = t.id || t.tutorId;
-        card.onclick = () => viewTutorProfile(tutorIdTarget);
-
+        card.onclick = () => viewTutorProfile(t.id || t.tutorId);
         card.innerHTML = `
           <div class="flex items-center gap-3">
             <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">
@@ -737,9 +1220,7 @@ async function showStudentProfile(studentId, isBackNavigation = false) {
                 <h4 class="font-bold text-slate-900 group-hover:text-emerald-700">${t.lastName || ''}, ${t.firstName || 'Tutor'}</h4>
                 <span class="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-md">${isPrimary ? 'Contacto Emergencia N°1' : 'Contacto Emergencia N°2'}</span>
               </div>
-              <p class="text-xs text-slate-500 mt-1">
-                Vínculo: ${t.relationship || 'Tutor Legal'} | DNI: ${t.documentNumber || '--'} | Tel: ${t.phone || 'Sin Registrar'}
-              </p>
+              <p class="text-xs text-slate-500 mt-1">Vínculo: ${t.relationship || 'Tutor Legal'} | DNI: ${t.documentNumber || '--'} | Tel: ${t.phone || 'Sin Registrar'}</p>
             </div>
           </div>
           <span class="material-icons-outlined text-slate-400 group-hover:text-emerald-600">chevron_right</span>
@@ -747,7 +1228,7 @@ async function showStudentProfile(studentId, isBackNavigation = false) {
         tutoresCont.appendChild(card);
       });
     } else {
-      tutoresCont.innerHTML = `<p class="text-xs text-slate-400 italic p-3">No hay tutores vinculados a este alumno.</p>`;
+      tutoresCont.innerHTML = `<p class="text-xs text-slate-400 italic p-3">No hay tutores vinculados.</p>`;
     }
 
     await fetchAndRenderPickupsGeneral(studentId, 'autorizados-container');
@@ -755,14 +1236,12 @@ async function showStudentProfile(studentId, isBackNavigation = false) {
     await renderComunicadosPrivadosAlumno(studentId);
 
   } catch (error) {
-    console.error("Error al cargar perfil de alumno:", error);
-    alert("No se pudo cargar la ficha del alumno.");
+    console.error("Error perfil alumno:", error);
   }
 }
 
 function hideStudentProfile() {
   document.getElementById('studentProfileView').classList.add('hidden');
-
   const previous = navigationHistory.pop();
   if (previous) {
     if (previous.viewType === 'tutorProfileView' && previous.entityId) {
@@ -775,34 +1254,79 @@ function hideStudentProfile() {
   }
 }
 
-async function confirmarBajaAlumno() {
-  const studentId = currentStudentData?.id;
+function openEditStudentModal() {
+  if (!currentStudentData) return;
+  populateAcademicYearSelects();
 
-  const student = activeStudents.find(s => s.id === studentId);
-  if (!student) return;
+  document.getElementById('edit-student-nombre').value = currentStudentData.firstName || '';
+  document.getElementById('edit-student-apellido').value = currentStudentData.lastName || '';
+  document.getElementById('edit-student-legajo').value = currentStudentData.legajoNumber || currentStudentData.legajo || '';
+  document.getElementById('edit-student-dni').value = currentStudentData.documentNumber || '';
+  document.getElementById('edit-student-nacimiento').value = currentStudentData.birthDate || '';
+  document.getElementById('edit-student-direccion').value = currentStudentData.address || currentStudentData.direccion || '';
 
-  const confirmacion = confirm(`¿Estás seguro de dar de baja al alumno "${student.firstName} ${student.lastName}"?\n\nEl legajo pasará al registro histórico.`);
-  if (!confirmacion) return;
+  const selAnio = document.getElementById('edit-student-academicYear');
+  if (selAnio) selAnio.value = currentStudentData.academicYear || new Date().getFullYear();
+
+  recalcularSalaFormularioEdicion();
+  document.getElementById('studentEditModal').classList.remove('hidden');
+}
+
+function closeEditStudentModal() {
+  document.getElementById('studentEditModal').classList.add('hidden');
+}
+
+async function guardarDatosAlumno(e) {
+  e.preventDefault();
+  if (!currentStudentData?.id) return;
+
+  const birthDateVal = document.getElementById('edit-student-nacimiento').value;
+  const academicYearVal = parseInt(document.getElementById('edit-student-academicYear')?.value || new Date().getFullYear());
+
+  const checkSala = calcularSala(birthDateVal, academicYearVal);
+  if (!checkSala.valida) { alert(checkSala.error); return; }
+
+  const updatedPayload = {
+    ...currentStudentData,
+    firstName: document.getElementById('edit-student-nombre').value.trim(),
+    lastName: document.getElementById('edit-student-apellido').value.trim(),
+    legajoNumber: document.getElementById('edit-student-legajo').value.trim(),
+    documentNumber: document.getElementById('edit-student-dni').value.trim(),
+    birthDate: birthDateVal,
+    academicYear: academicYearVal,
+    classroom: checkSala.sala,
+    address: document.getElementById('edit-student-direccion').value.trim()
+  };
 
   try {
-    const response = await fetch(`${API_BASE_URL}/students/${studentId}/baja`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      }
+    const response = await apiFetch(`/students/${currentStudentData.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updatedPayload)
     });
+    if (!response.ok) throw new Error("Error al actualizar alumno");
 
-    if (!response.ok) throw new Error("Error en la solicitud de baja");
-
-    alert("El alumno ha sido dado de baja correctamente.");
-    hideStudentProfile();
-    refreshAllData();
-
+    alert("¡Ficha del alumno actualizada!");
+    closeEditStudentModal();
+    await fetchStudents();
+    await showStudentProfile(currentStudentData.id, true);
   } catch (error) {
-    console.error("Error al dar de baja alumno:", error);
-    alert("No se pudo dar de baja al alumno en el servidor.");
+    alert(error.message);
+  }
+}
+
+async function confirmarBajaAlumno() {
+  if (!currentStudentData?.id) return;
+  if (!confirm(`¿Dar de baja al alumno "${currentStudentData.firstName} ${currentStudentData.lastName}"?`)) return;
+
+  try {
+    const response = await apiFetch(`/students/${currentStudentData.id}/baja`, { method: 'POST' });
+    if (response.ok) {
+      alert("El alumno ha sido dado de baja.");
+      hideStudentProfile();
+      refreshAllData();
+    }
+  } catch (error) {
+    console.error("Error baja alumno:", error);
   }
 }
 
@@ -810,528 +1334,70 @@ async function submitStudent() {
   const birthDateValue = document.getElementById('studentBirthDate')?.value;
   const academicYearVal = parseInt(document.getElementById('studentAcademicYear')?.value || new Date().getFullYear());
 
-  if (!birthDateValue) {
-    alert("La fecha de nacimiento es obligatoria para registrar la matrícula.");
-    return;
-  }
-
+  if (!birthDateValue) { alert("Fecha de nacimiento obligatoria."); return; }
   const checkSala = calcularSala(birthDateValue, academicYearVal);
-  if (!checkSala.valida) {
-    alert(checkSala.error);
-    return;
-  }
+  if (!checkSala.valida) { alert(checkSala.error); return; }
 
-  const selectedTutors = getSelectedTutors();
-  if (selectedTutors.length === 0) {
-    alert("Debes seleccionar al menos 1 tutor responsable.");
-    return;
-  }
-
-  const legajoVal = document.getElementById('studentLegajo')?.value.trim() || '';
-  const dirVal = document.getElementById('studentDireccion')?.value.trim() || '';
-
-  const studentData = {
-    firstName: document.getElementById('studentFirstName')?.value.trim() || '',
-    lastName: document.getElementById('studentLastName')?.value.trim() || '',
-    legajoNumber: legajoVal,
-    legajo: legajoVal,
-    documentNumber: document.getElementById('studentDni')?.value.trim() || '',
-    birthDate: birthDateValue,
-    academicYear: academicYearVal,
-    classroom: checkSala.sala,
-    address: dirVal,
-    direccion: dirVal,
-    status: "ACTIVE"
-  };
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/students`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      },
-      body: JSON.stringify(studentData)
-    });
-
-    if (!response.ok) {
-      let errorMsg = "Error al guardar el alumno en el servidor";
-      try {
-        const errorJson = await response.json();
-        errorMsg = errorJson.message || errorMsg;
-      } catch (_) {}
-      throw new Error(errorMsg);
-    }
-
-    const alumnoCreado = await response.json();
-
-    if (alumnoCreado.id) {
-      await fetch(`${API_BASE_URL}/students/${alumnoCreado.id}/tutors`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Institution-Id': currentSession.institutionId,
-          'X-User-Role': currentSession.role
-        },
-        body: JSON.stringify(selectedTutors)
-      });
-    }
-
-    alert(`¡Matrícula aprobada! Asignado automáticamente a: ${checkSala.sala}`);
-    toggleForm('studentFormContainer');
-    refreshAllData();
-
-  } catch (error) {
-    console.error("Error en la matrícula:", error);
-    alert(error.message);
-  }
-}
-
-function getSelectedTutors() {
   const tutor1Id = document.getElementById('studentTutor1')?.value;
   const tutor2Id = document.getElementById('studentTutor2')?.value;
-
   const tutors = [];
   if (tutor1Id) tutors.push({ tutorId: tutor1Id, isPrimary: true });
   if (tutor2Id && tutor2Id !== tutor1Id) tutors.push({ tutorId: tutor2Id, isPrimary: false });
 
-  if (tutors.length > 2) {
-    alert("Un alumno solo puede tener como máximo 2 tutores legales asignados.");
-    return tutors.slice(0, 2);
-  }
-  return tutors;
-}
+  if (tutors.length === 0) { alert("Debes seleccionar al menos un tutor responsable."); return; }
 
-// ========================================================
-// GESTIÓN DE PERSONAL / STAFF
-// ========================================================
-
-function renderStaffTable(list) {
-  const countBadge = document.getElementById('countStaffBadge');
-  if (countBadge) countBadge.innerText = list ? list.length : 0;
-
-  const tbody = document.getElementById('staffTableBody');
-  if (!tbody) return;
-
-  if (!list || list.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400 text-xs">No hay miembros del personal registrados.</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = list.map(u => `
-    <tr class="hover:bg-slate-50/80 transition-colors">
-      <td class="p-3 font-semibold text-slate-900">${u.lastName || ''}, ${u.firstName || ''}</td>
-      <td class="p-3 text-slate-600 font-medium">${u.email || '--'}</td>
-      <td class="p-3">
-        <span class="bg-emerald-50 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded">${u.role || 'STAFF'}</span>
-        ${u.classroom ? `<span class="bg-blue-50 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded ml-1">${u.classroom}</span>` : ''}
-      </td>
-      <td class="p-3 text-center">
-        <button onclick="viewStaffProfile('${u.id}')" class="text-slate-400 hover:text-emerald-600 p-1 rounded-full hover:bg-slate-100 cursor-pointer">
-          <span class="material-icons-outlined">contact_page</span>
-        </button>
-      </td>
-    </tr>
-  `).join('');
-}
-
-async function fetchStaff() {
-  try {
-    const r = await fetch(`${API_BASE_URL}/institution/staff`, {
-      headers: {
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      }
-    });
-    activeStaff = r.ok ? await r.json() : [];
-    renderStaffTable(activeStaff);
-
-  } catch(e) {
-    console.error("Error al obtener el personal:", e);
-    renderStaffTable([]);
-  }
-}
-
-function handleStaffRoleFormChange(role, targetBlockId) {
-  const block = document.getElementById(targetBlockId);
-  if (!block) return;
-
-  if (role === 'TEACHER') {
-    block.classList.remove('hidden');
-  } else {
-    block.classList.add('hidden');
-  }
-}
-
-function filterStaffTable() {
-  const targetRole = document.getElementById('filterStaffRole')?.value;
-  if (!targetRole || targetRole === 'TODOS') {
-    renderStaffTable(activeStaff);
-  } else {
-    renderStaffTable(activeStaff.filter(u => u.role === targetRole));
-  }
-}
-
-async function submitStaff() {
-  const role = document.getElementById('staffRole')?.value;
-  const hireDateValue = document.getElementById('staffHireDate')?.value;
-
-  const firstName = document.getElementById('staffFirstName')?.value.trim() || '';
-  const lastName = document.getElementById('staffLastName')?.value.trim() || '';
-  const email = document.getElementById('staffEmail')?.value.trim() || '';
-
-  if (!firstName || !lastName) {
-    alert("El nombre y apellido son obligatorios.");
-    return;
-  }
-
-  if (!hireDateValue) {
-    alert("La fecha de contratación es obligatoria.");
-    return;
-  }
-
-  const payload = {
-    id: crypto.randomUUID(),
-    firstName: firstName,
-    lastName: lastName,
-    email: email,
-    password: "123",
-    role: role,
-    hireDate: hireDateValue,
-    classroom: role === 'TEACHER' ? document.getElementById('staffAssignedClassroom')?.value : null,
-    tenantId: currentSession.institutionId
+  const studentData = {
+    firstName: document.getElementById('studentFirstName')?.value.trim() || '',
+    lastName: document.getElementById('studentLastName')?.value.trim() || '',
+    legajoNumber: document.getElementById('studentLegajo')?.value.trim() || '',
+    documentNumber: document.getElementById('studentDni')?.value.trim() || '',
+    birthDate: birthDateValue,
+    academicYear: academicYearVal,
+    classroom: checkSala.sala,
+    address: document.getElementById('studentDireccion')?.value.trim() || '',
+    status: "ACTIVE"
   };
 
   try {
-    const response = await fetch(`${API_BASE_URL}/institution/staff`, {
+    const response = await apiFetch('/students', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(studentData)
     });
+    if (!response.ok) throw new Error("Error al guardar alumno");
 
-    if (!response.ok) throw new Error("Error al registrar personal en el servidor");
-
-    let savedObject = payload;
-    try {
-      const responseData = await response.json();
-      if (responseData && (responseData.id || responseData.email)) {
-        savedObject = responseData;
-      }
-    } catch (jsonErr) {}
-
-    const index = activeStaff.findIndex(item => item.id === savedObject.id || item.email === savedObject.email);
-    if (index >= 0) {
-      activeStaff[index] = savedObject;
-    } else {
-      activeStaff.push(savedObject);
+    const alumnoCreado = await response.json();
+    if (alumnoCreado.id) {
+      await apiFetch(`/students/${alumnoCreado.id}/tutors`, {
+        method: 'POST',
+        body: JSON.stringify(tutors)
+      });
     }
 
-    renderStaffTable(activeStaff);
-
-    document.getElementById('staffFirstName').value = '';
-    document.getElementById('staffLastName').value = '';
-    document.getElementById('staffEmail').value = '';
-    document.getElementById('staffHireDate').value = '';
-    toggleForm('staffFormContainer');
-
-    alert("¡Miembro del personal registrado correctamente!");
-
-    setTimeout(() => {
-      fetchStaff();
-    }, 500);
-
+    alert(`¡Matrícula aprobada! Asignado a: ${checkSala.sala}`);
+    toggleForm('studentFormContainer');
+    refreshAllData();
   } catch (error) {
-    console.error("Error en alta de personal:", error);
-    alert("Hubo un problema al registrar al miembro del personal. Revisa los datos o la conexión.");
-  }
-}
-
-function viewStaffProfile(id) {
-  const staffMember = activeStaff.find(u => u.id === id);
-  if (!staffMember) {
-    alert("No se encontraron los datos del legajo seleccionado.");
-    return;
-  }
-  currentStaffData = staffMember;
-
-  const cursosAsignados = staffMember.classroom ? [{
-    nombre: staffMember.classroom,
-    turno: "Turno Mañana",
-    cantidadAlumnos: activeStudents.filter(s => s.classroom === staffMember.classroom).length,
-    rol: staffMember.role === 'TEACHER' ? 'Docente Titular' : staffMember.role
-  }] : [];
-
-  setDocenteData({
-    id: staffMember.id,
-    nombre: staffMember.firstName || '',
-    apellido: staffMember.lastName || '',
-    legajo: staffMember.id ? staffMember.id.substring(0, 8) : '-',
-    cargo: staffMember.role || 'STAFF',
-    estado: 'ACTIVO',
-    dni: staffMember.documentNumber || '-',
-    email: staffMember.email || '-',
-    telefono: staffMember.phone || '-',
-    fechaIngreso: staffMember.hireDate || '-',
-    cursos: cursosAsignados
-  });
-
-  evaluarPermisosBajaStaff();
-}
-
-function evaluarPermisosBajaStaff() {
-  const btnBaja = document.getElementById('btn-baja-staff');
-  if (btnBaja) {
-    if (['DIRECTOR', 'ADMINISTRATIVE'].includes(currentSession.role)) {
-      btnBaja.classList.remove('hidden');
-    } else {
-      btnBaja.classList.add('hidden');
-    }
-  }
-}
-
-function calcularTiempoTrabajado(fechaIngresoStr) {
-  if (!fechaIngresoStr) return "Tiempo no especificado (sin fecha de ingreso)";
-
-  const fechaIngreso = new Date(fechaIngresoStr);
-  const fechaActual = new Date();
-
-  if (isNaN(fechaIngreso.getTime())) return "Fecha de ingreso no disponible";
-
-  let años = fechaActual.getFullYear() - fechaIngreso.getFullYear();
-  let meses = fechaActual.getMonth() - fechaIngreso.getMonth();
-
-  if (meses < 0) {
-    años--;
-    meses += 12;
-  }
-
-  if (fechaActual.getDate() < fechaIngreso.getDate()) {
-    meses--;
-    if (meses < 0) {
-      años--;
-      meses += 12;
-    }
-  }
-
-  const totalMeses = (años * 12) + meses;
-
-  if (totalMeses < 12) {
-    return `${totalMeses} ${totalMeses === 1 ? 'mes' : 'meses'} (${totalMeses} meses acumulados para liquidación)`;
-  } else {
-    const restoMeses = meses;
-    const strAños = `${años} ${años === 1 ? 'año' : 'años'}`;
-    const strMeses = restoMeses > 0 ? ` y ${restoMeses} ${restoMeses === 1 ? 'mes' : 'meses'}` : '';
-    return `${strAños}${strMeses} (Total: ${totalMeses} meses de servicio)`;
-  }
-}
-
-async function confirmarBajaStaff() {
-  if (!currentStaffData || !currentStaffData.id) {
-    alert("No se pudo identificar la ficha del personal a dar de baja.");
-    return;
-  }
-
-  const nombreCompleto = `${currentStaffData.firstName || ''} ${currentStaffData.lastName || ''}`.trim();
-  const fechaIngreso = currentStaffData.hireDate;
-
-  const tiempoTrabajado = calcularTiempoTrabajado(fechaIngreso);
-
-  const confirmacion = confirm(
-      `¿Estás seguro de que deseas dar de baja a "${nombreCompleto}"?\n\n` +
-      `📋 Antigüedad registrada: ${tiempoTrabajado}\n` +
-      `Fecha de ingreso: ${fechaIngreso || 'No registrada'}\n\n` +
-      `Presiona Aceptar para procesar la baja.`
-  );
-
-  if (!confirmacion) return;
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/institution/staff/${currentStaffData.id}/baja`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      }
-    });
-
-    if (response.ok || response.status === 200 || response.status === 204) {
-      alert(
-          `✅ El docente/personal "${nombreCompleto}" fue dado de baja y movido al registro histórico.\n\n` +
-          `📊 RESUMEN PARA CÁLCULOS ECONÓMICOS / LIQUIDACIÓN:\n` +
-          `• Empleado: ${nombreCompleto}\n` +
-          `• Tiempo trabajado: ${tiempoTrabajado}\n` +
-          `• Fecha de ingreso: ${fechaIngreso || 'N/D'}\n` +
-          `• Fecha de egreso: ${new Date().toLocaleDateString('es-AR')}`
-      );
-
-      hideStaffProfile();
-      await fetchStaff();
-    } else {
-      let errText = "Error desconocido";
-      try {
-        const errorJson = await response.json();
-        errText = errorJson.message || errText;
-      } catch (e) {
-        errText = await response.text();
-      }
-
-      alert(`No se pudo procesar la baja (${response.status}): ${errText}`);
-    }
-
-  } catch (error) {
-    console.error("Error al procesar baja de personal:", error);
-    alert("Hubo un fallo de red o conexión al intentar procesar la baja.");
-  }
-}
-
-window.setDocenteData = function(data) {
-  if (!data) return;
-
-  document.querySelectorAll('.dashboard-view').forEach(v => v.classList.add('hidden'));
-  document.getElementById('staffProfileView').classList.remove('hidden');
-
-  const nombreCompleto = `${data.nombre || ''} ${data.apellido || ''}`.trim() || 'Sin Nombre';
-  document.getElementById('docente-nombre').textContent = nombreCompleto;
-  document.getElementById('docente-avatar').textContent = getInitials(nombreCompleto);
-  document.getElementById('docente-legajo').textContent = `Legajo: ${data.legajo || '-'}`;
-  document.getElementById('docente-cargo').textContent = `Cargo: ${data.cargo || '-'}`;
-  document.getElementById('docente-estado').textContent = `Estado: ${data.estado || 'ACTIVO'}`;
-  document.getElementById('docente-dni').textContent = data.dni || '-';
-  document.getElementById('docente-email').textContent = data.email || '-';
-  document.getElementById('docente-telefono').textContent = data.telefono || '-';
-  document.getElementById('docente-ingreso').textContent = data.fechaIngreso || '-';
-
-  const cursosCont = document.getElementById('cursos-container');
-  cursosCont.innerHTML = '';
-
-  if (data.cursos && data.cursos.length > 0) {
-    data.cursos.forEach(c => {
-      const item = document.createElement('div');
-      item.className = 'course-card bg-slate-50 border border-slate-200 rounded-lg p-3';
-      item.innerHTML = `
-        <h4 class="font-bold text-slate-800 text-sm">${c.nombre}</h4>
-        <p class="text-xs text-slate-500 mt-1">${c.turno} | Alumnos: ${c.cantidadAlumnos}</p>
-        <span class="bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5 rounded mt-2 inline-block">${c.rol}</span>
-      `;
-      cursosCont.appendChild(item);
-    });
-  } else {
-    cursosCont.innerHTML = '<p class="text-xs text-slate-400 col-span-2">No posee asignaturas ni salitas a cargo en el período activo.</p>';
-  }
-};
-
-function hideStaffProfile() {
-  document.getElementById('staffProfileView').classList.add('hidden');
-  document.getElementById('staffView').classList.remove('hidden');
-}
-
-// ========================================================
-// ACCIONES DE PLANILLA Y EDICIÓN DE STAFF
-// ========================================================
-
-function verPlanillaClasesDocente() {
-  if (!currentStaffData) return;
-
-  const nombre = `${currentStaffData.firstName || ''} ${currentStaffData.lastName || ''}`.trim();
-  const salita = currentStaffData.classroom || 'Sin sección asignada';
-  const cantAlumnos = activeStudents.filter(s => s.classroom === currentStaffData.classroom).length;
-
-  document.getElementById('planilla-docente-nombre').textContent = nombre;
-  document.getElementById('planilla-salita-nombre').textContent = `Sección: ${salita}`;
-  document.getElementById('planilla-cant-alumnos').textContent = cantAlumnos;
-
-  document.getElementById('planillaModal').classList.remove('hidden');
-}
-
-function cerrarModalPlanilla() {
-  document.getElementById('planillaModal').classList.add('hidden');
-}
-
-function abrirModalEdicionStaff() {
-  if (!currentStaffData) return;
-
-  document.getElementById('edit-staff-nombre').value = currentStaffData.firstName || '';
-  document.getElementById('edit-staff-apellido').value = currentStaffData.lastName || '';
-  document.getElementById('edit-staff-email').value = currentStaffData.email || '';
-  document.getElementById('edit-staff-role').value = currentStaffData.role || 'TEACHER';
-  document.getElementById('edit-staff-classroom').value = currentStaffData.classroom || '1° Sección (3 años)';
-
-  handleStaffRoleFormChange(currentStaffData.role || 'TEACHER', 'editStaffClassroomBlock');
-
-  document.getElementById('staffEditModal').classList.remove('hidden');
-}
-
-function cerrarModalEdicionStaff() {
-  document.getElementById('staffEditModal').classList.add('hidden');
-}
-
-async function guardarDatosStaff(e) {
-  e.preventDefault();
-  if (!currentStaffData || !currentStaffData.id) return;
-
-  const role = document.getElementById('edit-staff-role').value;
-  const updatedPayload = {
-    firstName: document.getElementById('edit-staff-nombre').value.trim(),
-    lastName: document.getElementById('edit-staff-apellido').value.trim(),
-    email: document.getElementById('edit-staff-email').value.trim(),
-    role: role,
-    classroom: role === 'TEACHER' ? document.getElementById('edit-staff-classroom').value : null
-  };
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/institution/staff/${currentStaffData.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      },
-      body: JSON.stringify(updatedPayload)
-    });
-
-    if (!response.ok) throw new Error("Error al actualizar los datos en el servidor");
-
-    const usuarioActualizado = await response.json();
-    alert("¡Legajo del docente/personal actualizado con éxito!");
-
-    currentStaffData = usuarioActualizado;
-    cerrarModalEdicionStaff();
-
-    await fetchStaff();
-    viewStaffProfile(usuarioActualizado.id);
-
-  } catch (error) {
-    console.error("Error al actualizar legajo de personal:", error);
-    alert("No se pudo actualizar el legajo. Revisa la conexión con el servidor.");
+    alert(error.message);
   }
 }
 
 // ========================================================
-// MÓDULO DE GESTIÓN DE CUOTAS
+// GESTIÓN DE CUOTAS
 // ========================================================
 
 const ARANCELES_CICLO_LECTIVO = [
-  { id: 0, nombre: 'Matrícula', key: 'MATRICULA' },
-  { id: 3, nombre: 'Marzo', key: 'MARZO' },
-  { id: 4, nombre: 'Abril', key: 'ABRIL' },
-  { id: 5, nombre: 'Mayo', key: 'MAYO' },
-  { id: 6, nombre: 'Junio', key: 'JUNIO' },
-  { id: 7, nombre: 'Julio', key: 'JULIO' },
-  { id: 8, nombre: 'Agosto', key: 'AGOSTO' },
-  { id: 9, nombre: 'Septiembre', key: 'SEPTIEMBRE' },
-  { id: 10, nombre: 'Octubre', key: 'OCTUBRE' },
-  { id: 11, nombre: 'Noviembre', key: 'NOVIEMBRE' },
-  { id: 12, nombre: 'Diciembre', key: 'DICIEMBRE' }
+  { id: 0, nombre: 'Matrícula' },
+  { id: 3, nombre: 'Marzo' },
+  { id: 4, nombre: 'Abril' },
+  { id: 5, nombre: 'Mayo' },
+  { id: 6, nombre: 'Junio' },
+  { id: 7, nombre: 'Julio' },
+  { id: 8, nombre: 'Agosto' },
+  { id: 9, nombre: 'Septiembre' },
+  { id: 10, nombre: 'Octubre' },
+  { id: 11, nombre: 'Noviembre' },
+  { id: 12, nombre: 'Diciembre' }
 ];
-
-let isEditingCuotas = false;
-let tempFeesState = {};
 
 async function renderCuotasView() {
   await fetchInstitutionalEmails();
@@ -1341,18 +1407,9 @@ async function renderCuotasView() {
 
 async function fetchInstitutionalEmails() {
   try {
-    const res = await fetch(`${API_BASE_URL}/institutions/settings/emails`, {
-      headers: {
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      }
-    });
-    if (res.ok) {
-      institutionalEmails = await res.json();
-    }
-  } catch (e) {
-    console.error("Error cargando emails institucionales:", e);
-  }
+    const res = await apiFetch('/institutions/settings/emails');
+    if (res.ok) institutionalEmails = await res.json();
+  } catch (e) { console.error("Error emails:", e); }
 }
 
 function filterCuotasTable() {
@@ -1361,33 +1418,15 @@ function filterCuotasTable() {
 
   const filterClassroom = document.getElementById('filterCuotasClassroom')?.value || 'TODAS';
   const rawQuery = document.getElementById('inputFilterCuotasStudents')?.value || '';
-  const role = currentSession.role;
-
-  let list = activeStudents;
-  if (role === 'TUTOR') {
-    list = activeStudents.filter(s => {
-      if (s.tutors && s.tutors.some(t => t.email === currentSession.email)) return true;
-      return s.tutorEmail === currentSession.email;
-    });
-  }
 
   const terms = normalizarTexto(rawQuery).split(/\s+/).filter(t => t.length > 0);
 
-  const filtered = list.filter(s => {
+  const filtered = activeStudents.filter(s => {
     const matchClass = (filterClassroom === 'TODAS' || s.classroom === filterClassroom);
     if (!matchClass) return false;
-
     if (terms.length === 0) return true;
 
-    const searchableString = normalizarTexto(`
-      ${s.firstName || ''} 
-      ${s.lastName || ''} 
-      ${s.legajoNumber || s.legajo || ''}
-      ${s.documentNumber || ''} 
-      ${s.id || ''} 
-      ${s.classroom || ''}
-    `);
-
+    const searchableString = normalizarTexto(`${s.firstName} ${s.lastName} ${s.legajoNumber || ''} ${s.documentNumber}`);
     return terms.every(term => searchableString.includes(term));
   });
 
@@ -1420,12 +1459,11 @@ async function abrirDetalleCuotas(studentId) {
   document.getElementById('cuotasDetailView').classList.remove('hidden');
 
   const legajoVisual = alumno.legajoNumber || alumno.legajo || (alumno.id ? alumno.id.substring(0, 8) : '-');
-
   document.getElementById('cuotasAlumnoNombre').textContent = `${alumno.lastName || ''}, ${alumno.firstName || ''}`;
   document.getElementById('cuotasAlumnoDni').textContent = alumno.documentNumber || '-';
   document.getElementById('cuotasAlumnoLegajoSala').textContent = `Legajo: ${legajoVisual} | Sección: ${alumno.classroom || '-'}`;
 
-  const esAdmin = (currentSession.role === 'DIRECTOR' || currentSession.role === 'ADMINISTRATIVE');
+  const esAdmin = ['DIRECTOR', 'ADMINISTRATIVE'].includes(currentSession.role);
   document.getElementById('cuotasEditActionContainer').classList.toggle('hidden', !esAdmin);
   document.getElementById('btnEditarMailComprobante').style.display = esAdmin ? 'inline-block' : 'none';
   document.getElementById('btnEditarMailConsulta').style.display = esAdmin ? 'inline-block' : 'none';
@@ -1434,10 +1472,10 @@ async function abrirDetalleCuotas(studentId) {
   const mailConsEl = document.getElementById('linkMailConsulta');
 
   mailCompEl.textContent = institutionalEmails.receiptEmail || 'No configurado';
-  mailCompEl.href = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(institutionalEmails.receiptEmail || '')}&su=${encodeURIComponent(`Comprobante de Pago - ${alumno.lastName}, ${alumno.firstName}`)}`;
+  mailCompEl.href = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(institutionalEmails.receiptEmail || '')}&su=${encodeURIComponent(`Comprobante - ${alumno.lastName}, ${alumno.firstName}`)}`;
 
   mailConsEl.textContent = institutionalEmails.feeQueryEmail || 'No configurado';
-  mailConsEl.href = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(institutionalEmails.feeQueryEmail || '')}&su=${encodeURIComponent(`Consulta Aranceles - ${alumno.lastName}, ${alumno.firstName}`)}`;
+  mailConsEl.href = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(institutionalEmails.feeQueryEmail || '')}&su=${encodeURIComponent(`Consulta - ${alumno.lastName}, ${alumno.firstName}`)}`;
 
   isEditingCuotas = false;
   await fetchStudentFees(studentId);
@@ -1458,15 +1496,9 @@ function volverAListaCuotas() {
 
 async function fetchStudentFees(studentId) {
   try {
-    const res = await fetch(`${API_BASE_URL}/students/${studentId}/fees?academicYear=2026`, {
-      headers: {
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      }
-    });
+    const res = await apiFetch(`/students/${studentId}/fees?academicYear=2026`);
     studentFeesList = res.ok ? await res.json() : [];
   } catch (e) {
-    console.error("Error al consultar aranceles del backend:", e);
     studentFeesList = [];
   }
 }
@@ -1541,36 +1573,43 @@ async function guardarCambiosCuotas() {
   if (!selectedStudentForCuotas) return;
 
   try {
+    // 1. Ejecutar las modificaciones pendientes contra el backend
     for (const m of ARANCELES_CICLO_LECTIVO) {
       const dbFee = studentFeesList.find(f => f.monthNumber === m.id);
       const isPaidCurrently = dbFee ? (dbFee.status === 'PAID') : false;
       const willBePaid = tempFeesState[m.id] === true;
 
       if (isPaidCurrently !== willBePaid) {
-        await fetch(`${API_BASE_URL}/students/${selectedStudentForCuotas}/fees/toggle?academicYear=2026&monthNumber=${m.id}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Institution-Id': currentSession.institutionId,
-            'X-User-Role': currentSession.role
-          }
+        await apiFetch(`/students/${selectedStudentForCuotas}/fees/toggle?academicYear=2026&monthNumber=${m.id}`, {
+          method: 'POST'
         });
       }
     }
 
-    alert("¡Cuotas del alumno actualizadas con éxito en la base de datos!");
+    // 2. Traer inmediatamente el estado actualizado y fresco desde la base de datos
+    await fetchStudentFees(selectedStudentForCuotas);
+
+    // 3. Sincronizar el estado en memoria con lo devuelto por el backend
+    tempFeesState = {};
+    studentFeesList.forEach(f => {
+      tempFeesState[f.monthNumber] = (f.status === 'PAID');
+    });
+
+    // 4. Salir del modo edición visualmente
     isEditingCuotas = false;
     document.getElementById('btnHabilitarEdicionCuotas').classList.remove('hidden');
     document.getElementById('btnGuardarEdicionCuotas').classList.add('hidden');
     document.getElementById('btnCancelarEdicionCuotas').classList.add('hidden');
     document.getElementById('badgeModoEdicion').classList.add('hidden');
 
-    await fetchStudentFees(selectedStudentForCuotas);
+    // 5. Redibujar inmediatamente los casilleros en el DOM
     dibujarCasillerosCuotas();
 
+    alert("¡Cuotas actualizadas exitosamente!");
+
   } catch (error) {
-    console.error("Error al guardar cambios de cuotas:", error);
-    alert("Hubo un problema al guardar las cuotas en el servidor.");
+    console.error("Error al guardar cuotas:", error);
+    alert("Hubo un error al guardar los pagos. Revise la conexión.");
   }
 }
 
@@ -1581,11 +1620,11 @@ function editarMailCuotas(tipo) {
   const label = document.getElementById('lblModalEmail');
 
   if (tipo === 'comprobante') {
-    titulo.innerHTML = '<span class="material-icons-outlined">receipt</span> Modificar Mail Institucional de Comprobantes';
+    titulo.innerHTML = '<span class="material-icons-outlined">receipt</span> Modificar Mail de Comprobantes';
     label.textContent = 'Correo Oficial para Recepción de Comprobantes';
     inputEmail.value = institutionalEmails.receiptEmail || '';
   } else {
-    titulo.innerHTML = '<span class="material-icons-outlined">mail</span> Modificar Mail Institucional de Consultas';
+    titulo.innerHTML = '<span class="material-icons-outlined">mail</span> Modificar Mail de Consultas';
     label.textContent = 'Correo Oficial para Consultas de Aranceles';
     inputEmail.value = institutionalEmails.feeQueryEmail || '';
   }
@@ -1608,34 +1647,26 @@ async function guardarEmailCuotas(e) {
   };
 
   try {
-    const res = await fetch(`${API_BASE_URL}/institutions/settings/emails`, {
+    const res = await apiFetch('/institutions/settings/emails', {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      },
       body: JSON.stringify(payload)
     });
 
     if (res.ok) {
-      alert("¡Correo institucional actualizado correctamente!");
+      alert("¡Correo institucional actualizado!");
       institutionalEmails = payload;
       cerrarModalEmailCuotas();
       if (selectedStudentForCuotas) {
         abrirDetalleCuotas(selectedStudentForCuotas);
       }
-    } else {
-      alert("No se pudo actualizar el correo en el servidor.");
     }
   } catch (error) {
     console.error("Error al guardar email:", error);
-    alert("Error de conexión con el servidor.");
   }
 }
 
 // ========================================================
-// MÓDULO DE CONTROL DE RETIROS DE ALUMNOS (AUTORIZADOS)
+// CONTROL DE RETIROS DE ALUMNOS (AUTORIZADOS)
 // ========================================================
 
 function renderRetirosView() {
@@ -1654,18 +1685,9 @@ function filterRetirosTable() {
   const filtrados = activeStudents.filter(s => {
     const matchClass = (filterClassroom === 'TODAS' || s.classroom === filterClassroom);
     if (!matchClass) return false;
-
     if (terms.length === 0) return true;
 
-    const searchableString = normalizarTexto(`
-      ${s.firstName || ''} 
-      ${s.lastName || ''} 
-      ${s.legajoNumber || s.legajo || ''}
-      ${s.documentNumber || ''} 
-      ${s.id || ''} 
-      ${s.classroom || ''}
-    `);
-
+    const searchableString = normalizarTexto(`${s.firstName} ${s.lastName} ${s.legajoNumber || ''} ${s.documentNumber}`);
     return terms.every(term => searchableString.includes(term));
   });
 
@@ -1691,7 +1713,6 @@ async function seleccionarAlumnoRetiros(studentId) {
   if (!alumno) return;
 
   const legajoVisual = alumno.legajoNumber || alumno.legajo || (alumno.id ? alumno.id.substring(0, 8) : '--');
-
   document.getElementById('retirosAlumnoNombreHeader').textContent = `${alumno.lastName || ''}, ${alumno.firstName || ''}`;
   document.getElementById('retirosAlumnoInfoSub').textContent = `DNI: ${alumno.documentNumber || '--'} | Sección: ${alumno.classroom || '--'} | Legajo: ${legajoVisual}`;
   document.getElementById('btnAgregarAutorizadoPanel').classList.remove('hidden');
@@ -1706,9 +1727,7 @@ function calcularEdadDesdeFecha(fechaStr) {
   const cumple = new Date(fechaStr + 'T00:00:00');
   let edad = hoy.getFullYear() - cumple.getFullYear();
   const m = hoy.getMonth() - cumple.getMonth();
-  if (m < 0 || (m === 0 && hoy.getDate() < cumple.getDate())) {
-    edad--;
-  }
+  if (m < 0 || (m === 0 && hoy.getDate() < cumple.getDate())) edad--;
   return edad;
 }
 
@@ -1725,7 +1744,7 @@ function actualizarEdadVisual() {
 
   const edad = calcularEdadDesdeFecha(inputDate.value);
   if (edad < 18) {
-    lbl.textContent = `${edad} años (❌ No permitido: Menor de 18)`;
+    lbl.textContent = `${edad} años (❌ Menor de 18)`;
     lbl.className = "font-bold text-rose-600";
   } else {
     lbl.textContent = `${edad} años (✓ Mayor de edad)`;
@@ -1738,49 +1757,32 @@ async function fetchAndRenderPickupsGeneral(studentId, targetContainerId) {
   if (!container) return;
 
   try {
-    const res = await fetch(`${API_BASE_URL}/students/${studentId}/authorized-pickups`, {
-      headers: {
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      }
-    });
-
+    const res = await apiFetch(`/students/${studentId}/authorized-pickups`);
     currentStudentPickups = res.ok ? await res.json() : [];
 
     if (currentStudentPickups.length === 0) {
-      container.innerHTML = `
-        <div class="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">
-          No hay personas autorizadas registradas para este alumno.
-        </div>
-      `;
+      container.innerHTML = `<div class="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">No hay personas autorizadas registradas.</div>`;
       return;
     }
 
     container.innerHTML = currentStudentPickups.map(p => `
-      <div onclick="verPerfilAmpliadoAutorizado('${p.id}')" class="p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs hover:border-emerald-500 hover:shadow-sm transition-all flex justify-between items-center cursor-pointer group">
+      <div onclick="verPerfilAmpliadoAutorizado('${p.id}')" class="p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs flex justify-between items-center cursor-pointer hover:border-emerald-500 transition-all">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+          <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">
             ${getInitials(p.fullName)}
           </div>
           <div>
             <div class="flex items-center gap-2">
-              <h4 class="font-bold text-slate-900 group-hover:text-emerald-700 text-xs">${p.fullName}</h4>
+              <h4 class="font-bold text-slate-900 text-xs">${p.fullName}</h4>
               <span class="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-md">${p.relationship}</span>
             </div>
-            <p class="text-[11px] text-slate-500 mt-0.5">
-              DNI: ${p.documentNumber} | ${p.age} años | Tel: ${p.phone}
-            </p>
+            <p class="text-[11px] text-slate-500 mt-0.5">DNI: ${p.documentNumber} | ${p.age} años | Tel: ${p.phone}</p>
           </div>
         </div>
 
-        <div class="flex items-center gap-1">
-          <button onclick="event.stopPropagation(); abrirModalEditarAutorizado('${p.id}')" title="Editar" class="p-1.5 text-slate-400 hover:text-emerald-600 rounded-lg hover:bg-slate-100 cursor-pointer">
-            <span class="material-icons-outlined text-sm">edit</span>
-          </button>
-          <button onclick="event.stopPropagation(); eliminarPersonaAutorizada('${p.id}')" title="Eliminar" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer">
-            <span class="material-icons-outlined text-sm">delete</span>
-          </button>
-        </div>
+        <button onclick="event.stopPropagation(); eliminarPersonaAutorizada('${p.id}')" title="Eliminar" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer">
+          <span class="material-icons-outlined text-sm">delete</span>
+        </button>
       </div>
     `).join('');
 
@@ -1794,19 +1796,11 @@ function verPerfilAmpliadoAutorizado(pickupId) {
   if (!p) return;
 
   document.getElementById('detailPickupAvatar').textContent = getInitials(p.fullName);
-  document.getElementById('detailPickupName').textContent = p.fullName;
-  document.getElementById('detailPickupRel').textContent = p.relationship;
-  document.getElementById('detailPickupDni').textContent = p.documentNumber;
-  document.getElementById('detailPickupAge').textContent = `${p.age} años ${p.birthDate ? '(' + p.birthDate + ')' : ''}`;
-  document.getElementById('detailPickupPhone').textContent = p.phone;
-
-  document.getElementById('detailPickupActions').innerHTML = `
-    <button onclick="cerrarModalDetalleAutorizado(); abrirModalEditarAutorizado('${p.id}')" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 cursor-pointer flex items-center gap-1">
-      <span class="material-icons-outlined text-xs">edit</span>
-      Editar Ficha
-    </button>
-    <button onclick="cerrarModalDetalleAutorizado()" class="px-4 py-2 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer">Cerrar</button>
-  `;
+  document.getElementById('detailPickupName').textContent = p.fullName || '-';
+  document.getElementById('detailPickupRel').textContent = p.relationship || 'Autorizado';
+  document.getElementById('detailPickupDni').textContent = p.documentNumber || '-';
+  document.getElementById('detailPickupAge').textContent = `${p.age || '-'} años`;
+  document.getElementById('detailPickupPhone').textContent = p.phone || '-';
 
   document.getElementById('pickupDetailModal').classList.remove('hidden');
 }
@@ -1819,36 +1813,12 @@ function abrirModalNuevoAutorizado() {
   const form = document.getElementById('formAuthorizedPickup');
   if (form) form.reset();
 
-  const editId = document.getElementById('pickupEditId');
-  if (editId) editId.value = '';
-
+  document.getElementById('pickupEditId').value = '';
   const label = document.getElementById('labelEdadCalculada');
   if (label) {
     label.textContent = 'Seleccione fecha';
     label.className = 'font-bold text-slate-400';
   }
-
-  const titulo = document.getElementById('pickupModalTitulo');
-  if (titulo) titulo.innerHTML = '<span class="material-icons-outlined">how_to_reg</span> Nueva Persona Autorizada';
-
-  document.getElementById('authorizedPickupModal').classList.remove('hidden');
-}
-
-function abrirModalEditarAutorizado(pickupId) {
-  const p = currentStudentPickups.find(item => item.id === pickupId);
-  if (!p) return;
-
-  document.getElementById('pickupEditId').value = p.id;
-  document.getElementById('pickupFullName').value = p.fullName || '';
-  document.getElementById('pickupDni').value = p.documentNumber || '';
-  document.getElementById('pickupBirthDate').value = p.birthDate || '';
-  document.getElementById('pickupRelationship').value = p.relationship || '';
-  document.getElementById('pickupPhone').value = p.phone || '';
-
-  actualizarEdadVisual();
-
-  const titulo = document.getElementById('pickupModalTitulo');
-  if (titulo) titulo.innerHTML = '<span class="material-icons-outlined">edit</span> Editar Persona Autorizada';
 
   document.getElementById('authorizedPickupModal').classList.remove('hidden');
 }
@@ -1860,121 +1830,63 @@ function cerrarModalNuevoAutorizado() {
 async function guardarPersonaAutorizada(e) {
   e.preventDefault();
 
-  let studentId = selectedStudentForRetiros;
-  if (!studentId) {
-    studentId = currentStudentData?.id;
-  }
+  let studentId = selectedStudentForRetiros || currentStudentData?.id;
+  if (!studentId) return;
 
-  if (!studentId || studentId === '-') {
-    alert("No se pudo identificar al alumno.");
-    return;
-  }
-
-  const inputFullName = document.getElementById('pickupFullName');
-  const inputDni = document.getElementById('pickupDni');
-  const inputBirthDate = document.getElementById('pickupBirthDate');
-  const inputRelationship = document.getElementById('pickupRelationship');
-  const inputPhone = document.getElementById('pickupPhone');
-  const inputEditId = document.getElementById('pickupEditId');
-
-  if (!inputFullName || !inputDni || !inputBirthDate || !inputRelationship || !inputPhone) {
-    console.error("Faltan inputs en el modal de autorizado.");
-    return;
-  }
-
-  const birthDateValue = inputBirthDate.value;
+  const birthDateValue = document.getElementById('pickupBirthDate').value;
   const edadCalculada = calcularEdadDesdeFecha(birthDateValue);
 
-  if (edadCalculada === null || isNaN(edadCalculada)) {
-    alert("Por favor ingrese una fecha de nacimiento válida.");
+  if (edadCalculada === null || isNaN(edadCalculada) || edadCalculada < 18) {
+    alert("La persona autorizada debe ser mayor de 18 años según la normativa.");
     return;
   }
 
-  if (edadCalculada < 18) {
-    alert(`La persona autorizada tiene ${edadCalculada} años. Debe ser mayor de 18 años según la normativa (Art. 154).`);
-    return;
-  }
-
-  const editId = inputEditId ? inputEditId.value.trim() : '';
   const payload = {
-    fullName: inputFullName.value.trim(),
-    documentNumber: inputDni.value.trim(),
+    fullName: document.getElementById('pickupFullName').value.trim(),
+    documentNumber: document.getElementById('pickupDni').value.trim(),
     birthDate: birthDateValue,
     age: edadCalculada,
-    relationship: inputRelationship.value.trim(),
-    phone: inputPhone.value.trim()
+    relationship: document.getElementById('pickupRelationship').value.trim(),
+    phone: document.getElementById('pickupPhone').value.trim()
   };
 
   try {
-    const url = editId
-        ? `${API_BASE_URL}/students/${studentId}/authorized-pickups/${editId}`
-        : `${API_BASE_URL}/students/${studentId}/authorized-pickups`;
-
-    const method = editId ? 'PUT' : 'POST';
-
-    const res = await fetch(url, {
-      method: method,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      },
+    const res = await apiFetch(`/students/${studentId}/authorized-pickups`, {
+      method: 'POST',
       body: JSON.stringify(payload)
     });
 
     if (res.ok) {
-      alert("¡Persona autorizada guardada correctamente!");
+      alert("¡Persona autorizada guardada!");
       cerrarModalNuevoAutorizado();
-      if (document.getElementById('studentProfileView') && !document.getElementById('studentProfileView').classList.contains('hidden')) {
-        await fetchAndRenderPickupsGeneral(studentId, 'autorizados-container');
-      }
-      if (document.getElementById('retirosView') && !document.getElementById('retirosView').classList.contains('hidden')) {
-        await fetchAndRenderPickupsGeneral(studentId, 'retirosDetalleAutorizados');
-      }
-    } else {
-      const errText = await res.text();
-      alert(`Error al guardar: ${errText}`);
+      if (currentStudentData) fetchAndRenderPickupsGeneral(studentId, 'autorizados-container');
+      if (selectedStudentForRetiros) fetchAndRenderPickupsGeneral(studentId, 'retirosDetalleAutorizados');
     }
   } catch (err) {
-    console.error("Error al guardar persona autorizada:", err);
-    alert("Error de conexión con el servidor.");
+    console.error("Error autorizado:", err);
   }
 }
 
 async function eliminarPersonaAutorizada(pickupId) {
-  let studentId = selectedStudentForRetiros;
-  if (!studentId) {
-    studentId = currentStudentData?.id;
-  }
-
-  if (!confirm("¿Deseas retirar la autorización de retiro a esta persona?")) return;
+  let studentId = selectedStudentForRetiros || currentStudentData?.id;
+  if (!studentId || !confirm("¿Deseas retirar la autorización de retiro?")) return;
 
   try {
-    const res = await fetch(`${API_BASE_URL}/students/${studentId}/authorized-pickups/${pickupId}`, {
-      method: 'DELETE',
-      headers: {
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      }
+    const res = await apiFetch(`/students/${studentId}/authorized-pickups/${pickupId}`, {
+      method: 'DELETE'
     });
 
     if (res.ok) {
-      if (document.getElementById('studentProfileView') && !document.getElementById('studentProfileView').classList.contains('hidden')) {
-        await fetchAndRenderPickupsGeneral(studentId, 'autorizados-container');
-      }
-      if (document.getElementById('retirosView') && !document.getElementById('retirosView').classList.contains('hidden')) {
-        await fetchAndRenderPickupsGeneral(studentId, 'retirosDetalleAutorizados');
-      }
-    } else {
-      alert("No se pudo eliminar la autorización.");
+      if (currentStudentData) fetchAndRenderPickupsGeneral(studentId, 'autorizados-container');
+      if (selectedStudentForRetiros) fetchAndRenderPickupsGeneral(studentId, 'retirosDetalleAutorizados');
     }
   } catch (err) {
-    console.error("Error al eliminar autorizado:", err);
+    console.error("Error al eliminar:", err);
   }
 }
 
 // ========================================================
-// MÓDULO DE RESTRICCIONES JUDICIALES
+// RESTRICCIONES JUDICIALES
 // ========================================================
 
 function renderRestriccionesView() {
@@ -1993,18 +1905,9 @@ function filterRestriccionesTable() {
   const filtrados = activeStudents.filter(s => {
     const matchClass = (filterClassroom === 'TODAS' || s.classroom === filterClassroom);
     if (!matchClass) return false;
-
     if (terms.length === 0) return true;
 
-    const searchableString = normalizarTexto(`
-      ${s.firstName || ''} 
-      ${s.lastName || ''} 
-      ${s.legajoNumber || s.legajo || ''}
-      ${s.documentNumber || ''} 
-      ${s.id || ''} 
-      ${s.classroom || ''}
-    `);
-
+    const searchableString = normalizarTexto(`${s.firstName} ${s.lastName} ${s.legajoNumber || ''} ${s.documentNumber}`);
     return terms.every(term => searchableString.includes(term));
   });
 
@@ -2030,14 +1933,9 @@ async function seleccionarAlumnoRestricciones(studentId) {
   if (!alumno) return;
 
   const legajoVisual = alumno.legajoNumber || alumno.legajo || (alumno.id ? alumno.id.substring(0, 8) : '--');
-
-  const header = document.getElementById('restriccionesAlumnoNombreHeader');
-  const sub = document.getElementById('restriccionesAlumnoInfoSub');
-  const btn = document.getElementById('btnAgregarRestriccionPanel');
-
-  if (header) header.textContent = `${alumno.lastName || ''}, ${alumno.firstName || ''}`;
-  if (sub) sub.textContent = `DNI: ${alumno.documentNumber || '--'} | Sección: ${alumno.classroom || '--'} | Legajo: ${legajoVisual}`;
-  if (btn) btn.classList.remove('hidden');
+  document.getElementById('restriccionesAlumnoNombreHeader').textContent = `${alumno.lastName || ''}, ${alumno.firstName || ''}`;
+  document.getElementById('restriccionesAlumnoInfoSub').textContent = `DNI: ${alumno.documentNumber || '--'} | Sección: ${alumno.classroom || '--'} | Legajo: ${legajoVisual}`;
+  document.getElementById('btnAgregarRestriccionPanel').classList.remove('hidden');
 
   filterRestriccionesTable();
   await fetchAndRenderRestrictionsGeneral(studentId, 'restriccionesDetalleList');
@@ -2048,54 +1946,33 @@ async function fetchAndRenderRestrictionsGeneral(studentId, targetContainerId) {
   if (!container) return;
 
   try {
-    const res = await fetch(`${API_BASE_URL}/students/${studentId}/judicial-restrictions`, {
-      headers: {
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      }
-    });
-
+    const res = await apiFetch(`/students/${studentId}/judicial-restrictions`);
     currentStudentRestrictions = res.ok ? await res.json() : [];
 
     if (currentStudentRestrictions.length === 0) {
-      container.innerHTML = `
-        <div class="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">
-          No constan medidas de restricción judicial certificadas para este alumno.
-        </div>
-      `;
+      container.innerHTML = `<div class="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">No constan medidas judiciales certificadas.</div>`;
       return;
     }
 
     container.innerHTML = currentStudentRestrictions.map(r => `
-      <div onclick="verPerfilAmpliadoRestriccion('${r.id}')" class="p-3.5 bg-white border border-rose-200 rounded-xl shadow-xs hover:border-rose-500 hover:shadow-sm transition-all flex justify-between items-center cursor-pointer group">
+      <div onclick="verPerfilAmpliadoRestriccion('${r.id}')" class="p-3.5 bg-white border border-rose-200 rounded-xl shadow-xs flex justify-between items-center cursor-pointer hover:border-rose-500 transition-all">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-sm group-hover:bg-rose-600 group-hover:text-white transition-colors">
+          <div class="w-10 h-10 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-sm">
             ${getInitials(`${r.firstName || ''} ${r.lastName || ''}`)}
           </div>
           <div>
-            <div class="flex items-center gap-2">
-              <h4 class="font-bold text-slate-900 group-hover:text-rose-700 text-xs">${r.lastName}, ${r.firstName}</h4>
-              <span class="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-2 py-0.5 rounded-md">Prohibición Judicial</span>
-            </div>
-            <p class="text-[11px] text-slate-500 mt-0.5">
-              ${r.documentType || 'DNI'}: ${r.documentNumber} | <strong>Medida:</strong> ${r.description.length > 45 ? r.description.substring(0, 45) + '...' : r.description}
-            </p>
+            <h4 class="font-bold text-slate-900 text-xs">${r.lastName}, ${r.firstName} (Prohibición Judicial)</h4>
+            <p class="text-[11px] text-slate-500">DNI: ${r.documentNumber} | <strong>Medida:</strong> ${r.description}</p>
           </div>
         </div>
-
-        <div class="flex items-center gap-1">
-          <button onclick="event.stopPropagation(); abrirModalEditarRestriccion('${r.id}')" title="Editar" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 cursor-pointer">
-            <span class="material-icons-outlined text-sm">edit</span>
-          </button>
-          <button onclick="event.stopPropagation(); eliminarRestriccionJudicial('${r.id}')" title="Eliminar" class="p-1.5 text-slate-400 hover:text-rose-700 rounded-lg hover:bg-rose-50 cursor-pointer">
-            <span class="material-icons-outlined text-sm">delete</span>
-          </button>
-        </div>
+        <button onclick="event.stopPropagation(); eliminarRestriccionJudicial('${r.id}')" class="p-1.5 text-slate-400 hover:text-rose-700 rounded-lg hover:bg-rose-50 cursor-pointer">
+          <span class="material-icons-outlined text-sm">delete</span>
+        </button>
       </div>
     `).join('');
 
   } catch (error) {
-    console.error("Error cargando restricciones judiciales:", error);
+    console.error("Error restricciones:", error);
   }
 }
 
@@ -2104,119 +1981,41 @@ function verPerfilAmpliadoRestriccion(restrictionId) {
   if (!r) return;
 
   const nombreCompleto = `${r.lastName || ''}, ${r.firstName || ''}`.trim();
+  document.getElementById('detailRestrAvatar').textContent = getInitials(nombreCompleto);
+  document.getElementById('detailRestrName').textContent = nombreCompleto || '-';
+  document.getElementById('detailRestrDoc').textContent = `${r.documentType || 'DNI'}: ${r.documentNumber || '-'}`;
+  document.getElementById('detailRestrDesc').textContent = r.description || '-';
+  document.getElementById('detailRestrLegajo').textContent = r.legajoNumber || '-';
+  document.getElementById('detailRestrMatrix').textContent = r.matrixNumber || '-';
+  document.getElementById('detailRestrFolio').textContent = r.folioNumber || '-';
+  document.getElementById('detailRestrDate').textContent = r.inscriptionDate || '-';
 
-  const avatarEl = document.getElementById('detailRestrAvatar');
-  const nameEl = document.getElementById('detailRestrName');
-  const docEl = document.getElementById('detailRestrDoc');
-  const dateEl = document.getElementById('detailRestrDate');
-  const descEl = document.getElementById('detailRestrDesc');
-  const legajoEl = document.getElementById('detailRestrLegajo');
-  const matrixEl = document.getElementById('detailRestrMatrix');
-  const folioEl = document.getElementById('detailRestrFolio');
-  const actionsEl = document.getElementById('detailRestrActions');
-  const modalEl = document.getElementById('restrictionDetailModal');
-
-  if (avatarEl) avatarEl.textContent = getInitials(nombreCompleto);
-  if (nameEl) nameEl.textContent = nombreCompleto || '-';
-  if (docEl) docEl.textContent = `${r.documentType || 'DNI'}: ${r.documentNumber || '-'}`;
-  if (dateEl) dateEl.textContent = r.inscriptionDate || 'No especificada';
-  if (descEl) descEl.textContent = r.description || '-';
-  if (legajoEl) legajoEl.textContent = r.legajoNumber || '-';
-  if (matrixEl) matrixEl.textContent = r.matrixNumber || '-';
-  if (folioEl) folioEl.textContent = r.folioNumber || '-';
-
-  if (actionsEl) {
-    actionsEl.innerHTML = `
-      <button onclick="cerrarModalDetalleRestriccion(); abrirModalEditarRestriccion('${r.id}')" class="px-4 py-2 bg-rose-600 text-white rounded-lg text-xs font-semibold hover:bg-rose-700 cursor-pointer flex items-center gap-1">
-        <span class="material-icons-outlined text-xs">edit</span>
-        Editar Medida
-      </button>
-      <button type="button" onclick="cerrarModalDetalleRestriccion()" class="px-4 py-2 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer">Cerrar</button>
-    `;
-  }
-
-  if (modalEl) modalEl.classList.remove('hidden');
+  document.getElementById('restrictionDetailModal').classList.remove('hidden');
 }
 
 function cerrarModalDetalleRestriccion() {
-  const modal = document.getElementById('restrictionDetailModal');
-  if (modal) modal.classList.add('hidden');
+  document.getElementById('restrictionDetailModal').classList.add('hidden');
 }
 
 function abrirModalNuevaRestriccion() {
   const form = document.getElementById('formJudicialRestriction');
   if (form) form.reset();
 
-  const editId = document.getElementById('restriccionEditId');
-  if (editId) editId.value = '';
-
-  let student = null;
-  if (selectedStudentForRestricciones) {
-    student = activeStudents.find(s => s.id === selectedStudentForRestricciones);
-  }
-  if (!student && currentStudentData) {
-    student = currentStudentData;
-  }
-
-  const inputLegajo = document.getElementById('restriccionLegajo');
-  if (inputLegajo) {
-    const legajoVal = student ? (student.legajoNumber || student.legajo || (student.id ? student.id.substring(0, 8) : '')) : '';
-    inputLegajo.value = legajoVal;
-  }
-
-  const inputDate = document.getElementById('restriccionDate');
-  if (inputDate && !inputDate.value) {
-    inputDate.value = new Date().toISOString().split('T')[0];
-  }
-
-  const titulo = document.getElementById('modalRestriccionTitulo');
-  if (titulo) titulo.innerHTML = '<span class="material-icons-outlined">gavel</span> Nueva Restricción Judicial';
-
-  const modal = document.getElementById('judicialRestrictionModal');
-  if (modal) modal.classList.remove('hidden');
-}
-
-function abrirModalEditarRestriccion(restrictionId) {
-  const r = currentStudentRestrictions.find(item => item.id === restrictionId);
-  if (!r) return;
-
-  document.getElementById('restriccionEditId').value = r.id;
-  document.getElementById('restriccionLastName').value = r.lastName || '';
-  document.getElementById('restriccionFirstName').value = r.firstName || '';
-  document.getElementById('restriccionDocType').value = r.documentType || 'DNI';
-  document.getElementById('restriccionDocNumber').value = r.documentNumber || '';
-  document.getElementById('restriccionDescription').value = r.description || '';
-  document.getElementById('restriccionLegajo').value = r.legajoNumber || '';
-  document.getElementById('restriccionMatrix').value = r.matrixNumber || '';
-  document.getElementById('restriccionFolio').value = r.folioNumber || '';
-  document.getElementById('restriccionDate').value = r.inscriptionDate || '';
-
-  const titulo = document.getElementById('modalRestriccionTitulo');
-  if (titulo) titulo.innerHTML = '<span class="material-icons-outlined">edit</span> Editar Restricción Judicial';
-
-  const modal = document.getElementById('judicialRestrictionModal');
-  if (modal) modal.classList.remove('hidden');
+  document.getElementById('restriccionEditId').value = '';
+  document.getElementById('restriccionDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('judicialRestrictionModal').classList.remove('hidden');
 }
 
 function cerrarModalRestriccion() {
-  const modal = document.getElementById('judicialRestrictionModal');
-  if (modal) modal.classList.add('hidden');
+  document.getElementById('judicialRestrictionModal').classList.add('hidden');
 }
 
 async function guardarRestriccionJudicial(e) {
   e.preventDefault();
 
-  let studentId = selectedStudentForRestricciones;
-  if (!studentId) {
-    studentId = currentStudentData?.id;
-  }
+  let studentId = selectedStudentForRestricciones || currentStudentData?.id;
+  if (!studentId) return;
 
-  if (!studentId || studentId === '-') {
-    alert("No se pudo identificar al alumno.");
-    return;
-  }
-
-  const editId = document.getElementById('restriccionEditId').value.trim();
   const payload = {
     lastName: document.getElementById('restriccionLastName').value.trim(),
     firstName: document.getElementById('restriccionFirstName').value.trim(),
@@ -2230,67 +2029,34 @@ async function guardarRestriccionJudicial(e) {
   };
 
   try {
-    const url = editId
-        ? `${API_BASE_URL}/students/${studentId}/judicial-restrictions/${editId}`
-        : `${API_BASE_URL}/students/${studentId}/judicial-restrictions`;
-
-    const method = editId ? 'PUT' : 'POST';
-
-    const res = await fetch(url, {
-      method: method,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      },
+    const res = await apiFetch(`/students/${studentId}/judicial-restrictions`, {
+      method: 'POST',
       body: JSON.stringify(payload)
     });
 
     if (res.ok) {
-      alert("¡Medida de restricción judicial guardada correctamente!");
+      alert("¡Restricción judicial guardada!");
       cerrarModalRestriccion();
-      if (document.getElementById('studentProfileView') && !document.getElementById('studentProfileView').classList.contains('hidden')) {
-        await fetchAndRenderRestrictionsGeneral(studentId, 'restricciones-container');
-      }
-      if (document.getElementById('restriccionesView') && !document.getElementById('restriccionesView').classList.contains('hidden')) {
-        await fetchAndRenderRestrictionsGeneral(studentId, 'restriccionesDetalleList');
-      }
-    } else {
-      const errText = await res.text();
-      alert(`Error al guardar la restricción: ${errText}`);
+      if (currentStudentData) fetchAndRenderRestrictionsGeneral(studentId, 'restricciones-container');
+      if (selectedStudentForRestricciones) fetchAndRenderRestrictionsGeneral(studentId, 'restriccionesDetalleList');
     }
   } catch (err) {
-    console.error("Error al guardar restricción:", err);
-    alert("Error de conexión con el servidor.");
+    console.error("Error:", err);
   }
 }
 
 async function eliminarRestriccionJudicial(restrictionId) {
-  let studentId = selectedStudentForRestricciones;
-  if (!studentId) {
-    studentId = currentStudentData?.id;
-  }
-
-  if (!confirm("¿Está seguro de eliminar este registro de restricción judicial del alumno?")) return;
+  let studentId = selectedStudentForRestricciones || currentStudentData?.id;
+  if (!studentId || !confirm("¿Está seguro de eliminar esta restricción judicial?")) return;
 
   try {
-    const res = await fetch(`${API_BASE_URL}/students/${studentId}/judicial-restrictions/${restrictionId}`, {
-      method: 'DELETE',
-      headers: {
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      }
+    const res = await apiFetch(`/students/${studentId}/judicial-restrictions/${restrictionId}`, {
+      method: 'DELETE'
     });
 
     if (res.ok) {
-      if (document.getElementById('studentProfileView') && !document.getElementById('studentProfileView').classList.contains('hidden')) {
-        await fetchAndRenderRestrictionsGeneral(studentId, 'restricciones-container');
-      }
-      if (document.getElementById('restriccionesView') && !document.getElementById('restriccionesView').classList.contains('hidden')) {
-        await fetchAndRenderRestrictionsGeneral(studentId, 'restriccionesDetalleList');
-      }
-    } else {
-      alert("No se pudo eliminar el registro de restricción.");
+      if (currentStudentData) fetchAndRenderRestrictionsGeneral(studentId, 'restricciones-container');
+      if (selectedStudentForRestricciones) fetchAndRenderRestrictionsGeneral(studentId, 'restriccionesDetalleList');
     }
   } catch (err) {
     console.error("Error al eliminar restricción:", err);
@@ -2298,10 +2064,8 @@ async function eliminarRestriccionJudicial(restrictionId) {
 }
 
 // ========================================================
-// MÓDULO DE COMUNICADOS
+// COMUNICADOS
 // ========================================================
-
-let announcementsList = [];
 
 function renderComunicadosView() {
   filterComunicadosFeed();
@@ -2310,25 +2074,17 @@ function renderComunicadosView() {
 
 async function fetchAnnouncements() {
   try {
-    const res = await fetch(`${API_BASE_URL}/announcements`, {
-      headers: {
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      }
-    });
-
+    const res = await apiFetch('/announcements');
     announcementsList = res.ok ? await res.json() : [];
     renderInicioFeed();
     filterComunicadosFeed();
-
   } catch (error) {
-    console.error("Error al cargar comunicados:", error);
+    console.error("Error comunicados:", error);
   }
 }
 
 function getAuthorizedAnnouncements() {
   let list = announcementsList;
-
   if (currentSession.role === 'TEACHER') {
     const userClass = currentStaffData?.classroom;
     list = list.filter(a => a.scope === 'GLOBAL' || a.targetClassroom === userClass);
@@ -2351,7 +2107,6 @@ function renderInicioFeed() {
   if (!container) return;
 
   const list = getAuthorizedAnnouncements().filter(a => a.scope !== 'PRIVATE_STUDENT').slice(0, 3);
-
   if (list.length === 0) {
     container.innerHTML = `<div class="p-4 bg-white border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">No hay comunicados recientes publicados.</div>`;
     return;
@@ -2388,7 +2143,6 @@ async function renderComunicadosPrivadosAlumno(studentId) {
   if (!container) return;
 
   const list = announcementsList.filter(a => a.scope === 'PRIVATE_STUDENT' && a.targetStudentId === studentId);
-
   if (list.length === 0) {
     container.innerHTML = `<div class="p-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">No hay mensajes privados registrados para este alumno.</div>`;
     return;
@@ -2414,9 +2168,6 @@ function renderCardHtml(a, canEditIfAuthorized) {
         </div>
         ${canManage ? `
           <div class="flex items-center gap-1">
-            <button onclick="abrirModalEditarComunicado('${a.id}')" title="Editar" class="p-1 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-50 cursor-pointer">
-              <span class="material-icons-outlined text-sm">edit</span>
-            </button>
             <button onclick="eliminarComunicado('${a.id}')" title="Eliminar" class="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 cursor-pointer">
               <span class="material-icons-outlined text-sm">delete</span>
             </button>
@@ -2430,7 +2181,7 @@ function renderCardHtml(a, canEditIfAuthorized) {
       </div>
 
       ${a.mediaUrl ? `
-        <a href="${a.mediaUrl}" target="_blank" class="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded text-xs font-semibold text-indigo-700 hover:bg-indigo-50 transition-colors">
+        <a href="${a.mediaUrl}" target="_blank" class="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded text-xs font-semibold text-indigo-700 hover:bg-indigo-50">
           <span class="material-icons-outlined text-xs">smart_display</span>
           <span>Ver Material / Enlace</span>
         </a>
@@ -2453,8 +2204,7 @@ function handleComunicadoScopeChange() {
 function evaluarPermisosComunicados() {
   const btnNuevo = document.getElementById('btnNuevoComunicado');
   if (btnNuevo) {
-    const canCreate = ['DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER'].includes(currentSession.role);
-    btnNuevo.classList.toggle('hidden', !canCreate);
+    btnNuevo.classList.toggle('hidden', !['DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER'].includes(currentSession.role));
   }
 }
 
@@ -2464,29 +2214,7 @@ function abrirModalNuevoComunicado() {
 
   document.getElementById('comunicadoEditId').value = '';
   document.getElementById('comunicadoTargetStudentId').value = '';
-
-  const scopeSel = document.getElementById('comunicadoScope');
-  const salaSel = document.getElementById('comunicadoTargetClassroom');
-
-  if (currentSession.role === 'TEACHER') {
-    if (scopeSel) {
-      scopeSel.value = 'CLASSROOM';
-      scopeSel.querySelector('option[value="GLOBAL"]').disabled = true;
-      scopeSel.querySelector('option[value="PRIVATE_STUDENT"]').disabled = true;
-    }
-    if (salaSel && currentStaffData?.classroom) {
-      salaSel.value = currentStaffData.classroom;
-    }
-  } else {
-    if (scopeSel) {
-      scopeSel.querySelector('option[value="GLOBAL"]').disabled = false;
-      scopeSel.querySelector('option[value="PRIVATE_STUDENT"]').disabled = false;
-      scopeSel.value = 'GLOBAL';
-    }
-  }
-
   handleComunicadoScopeChange();
-  document.getElementById('modalComunicadoTitulo').innerHTML = '<span class="material-icons-outlined">campaign</span> Nuevo Comunicado Institucional';
   document.getElementById('comunicadoModal').classList.remove('hidden');
 }
 
@@ -2494,38 +2222,11 @@ function abrirModalComunicadoPrivado() {
   if (!currentStudentData) return;
 
   abrirModalNuevoComunicado();
-
   document.getElementById('comunicadoTargetStudentId').value = currentStudentData.id;
   document.getElementById('comunicadoCategory').value = 'PRIVADO';
   const scopeSel = document.getElementById('comunicadoScope');
-  if (scopeSel) {
-    scopeSel.value = 'PRIVATE_STUDENT';
-  }
+  if (scopeSel) scopeSel.value = 'PRIVATE_STUDENT';
   handleComunicadoScopeChange();
-
-  document.getElementById('modalComunicadoTitulo').innerHTML = `<span class="material-icons-outlined">mail</span> Mensaje Privado a Familia de ${currentStudentData.firstName}`;
-}
-
-function abrirModalEditarComunicado(comunicadoId) {
-  const a = announcementsList.find(item => item.id === comunicadoId);
-  if (!a) return;
-
-  document.getElementById('comunicadoEditId').value = a.id;
-  document.getElementById('comunicadoTargetStudentId').value = a.targetStudentId || '';
-  document.getElementById('comunicadoTitle').value = a.title || '';
-  document.getElementById('comunicadoCategory').value = a.category || 'GENERAL';
-  document.getElementById('comunicadoScope').value = a.scope || 'GLOBAL';
-  document.getElementById('comunicadoContent').value = a.content || '';
-  document.getElementById('comunicadoMediaUrl').value = a.mediaUrl || '';
-
-  handleComunicadoScopeChange();
-
-  if (a.targetClassroom) {
-    document.getElementById('comunicadoTargetClassroom').value = a.targetClassroom;
-  }
-
-  document.getElementById('modalComunicadoTitulo').innerHTML = '<span class="material-icons-outlined">edit</span> Editar Comunicado';
-  document.getElementById('comunicadoModal').classList.remove('hidden');
 }
 
 function cerrarModalComunicado() {
@@ -2535,10 +2236,7 @@ function cerrarModalComunicado() {
 async function guardarComunicado(e) {
   e.preventDefault();
 
-  const editId = document.getElementById('comunicadoEditId').value.trim();
   const scope = document.getElementById('comunicadoScope').value;
-  const targetStudentId = document.getElementById('comunicadoTargetStudentId').value.trim() || null;
-
   const payload = {
     authorId: currentSession.email,
     authorName: currentSession.email.split('@')[0],
@@ -2546,70 +2244,37 @@ async function guardarComunicado(e) {
     title: document.getElementById('comunicadoTitle').value.trim(),
     content: document.getElementById('comunicadoContent').value.trim(),
     category: document.getElementById('comunicadoCategory').value,
-    scope: scope,
+    scope,
     targetClassroom: scope === 'CLASSROOM' ? document.getElementById('comunicadoTargetClassroom').value : null,
-    targetStudentId: targetStudentId,
+    targetStudentId: document.getElementById('comunicadoTargetStudentId').value.trim() || null,
     mediaUrl: document.getElementById('comunicadoMediaUrl').value.trim() || null,
     isPinned: false
   };
 
   try {
-    const url = editId
-        ? `${API_BASE_URL}/announcements/${editId}`
-        : `${API_BASE_URL}/announcements`;
-
-    const method = editId ? 'PUT' : 'POST';
-
-    const res = await fetch(url, {
-      method: method,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      },
+    const res = await apiFetch('/announcements', {
+      method: 'POST',
       body: JSON.stringify(payload)
     });
 
     if (res.ok) {
-      alert("¡Comunicado procesado con éxito!");
+      alert("¡Comunicado publicado con éxito!");
       cerrarModalComunicado();
       await fetchAnnouncements();
-
-      if (currentStudentData && !document.getElementById('studentProfileView').classList.contains('hidden')) {
-        renderComunicadosPrivadosAlumno(currentStudentData.id);
-      }
-    } else {
-      const err = await res.text();
-      alert(`Error al guardar comunicado: ${err}`);
     }
   } catch (error) {
-    console.error("Error al guardar comunicado:", error);
-    alert("Error de conexión con el servidor.");
+    console.error("Error comunicado:", error);
   }
 }
 
-async function eliminarComunicado(comunicadoId) {
+async function eliminarComunicado(id) {
   if (!confirm("¿Deseas eliminar este comunicado?")) return;
 
   try {
-    const res = await fetch(`${API_BASE_URL}/announcements/${comunicadoId}`, {
-      method: 'DELETE',
-      headers: {
-        'X-Institution-Id': currentSession.institutionId,
-        'X-User-Role': currentSession.role
-      }
-    });
-
-    if (res.ok) {
-      await fetchAnnouncements();
-      if (currentStudentData) {
-        renderComunicadosPrivadosAlumno(currentStudentData.id);
-      }
-    } else {
-      alert("No se pudo eliminar el comunicado.");
-    }
+    const res = await apiFetch(`/announcements/${id}`, { method: 'DELETE' });
+    if (res.ok) await fetchAnnouncements();
   } catch (error) {
-    console.error("Error al eliminar comunicado:", error);
+    console.error("Error al eliminar:", error);
   }
 }
 

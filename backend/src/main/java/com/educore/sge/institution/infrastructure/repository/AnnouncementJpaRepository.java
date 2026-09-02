@@ -12,6 +12,7 @@ public interface AnnouncementJpaRepository extends JpaRepository<AnnouncementJpa
     // Lista ordenada para la institución
     List<AnnouncementJpaEntity> findAllByTenantIdOrderByIsPinnedDescCreatedAtDesc(String tenantId);
 
+
     // Búsqueda específica filtrada para tutores y salitas
     @Query("SELECT a FROM AnnouncementJpaEntity a WHERE a.tenantId = :tenantId AND (" +
             "a.scope = 'GLOBAL' OR " +

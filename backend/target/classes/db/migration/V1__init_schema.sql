@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS student_tutors (
     CONSTRAINT fk_st_tutor FOREIGN KEY (tutor_id) REFERENCES tutors(id) ON DELETE CASCADE
     );
 
--- 5. TABLA STAFF
+-- 5. TABLA STAFF (DOCENTES Y PERSONAL)
 CREATE TABLE IF NOT EXISTS institution_staff (
                                                  id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -97,7 +97,6 @@ CREATE TABLE IF NOT EXISTS institution_staff (
     document_number VARCHAR(50) NULL,
     phone VARCHAR(50) NULL,
     hire_date DATE NOT NULL,
-    classroom VARCHAR(100) NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -109,7 +108,25 @@ CREATE TABLE IF NOT EXISTS institution_staff (
     CONSTRAINT fk_staff_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 6. TABLA DE COMUNICADOS INSTITUCIONALES
+-- TABLA ASIGNACIONES DOCENTE
+CREATE TABLE IF NOT EXISTS staff_assignments (
+                                                 id VARCHAR(36) NOT NULL,
+    staff_id VARCHAR(36) NOT NULL,
+    tenant_id VARCHAR(36) NOT NULL,
+    subject VARCHAR(100) NOT NULL,
+    classroom VARCHAR(100) NOT NULL,
+    shift VARCHAR(50) NOT NULL DEFAULT 'MANANA',
+    is_classroom_teacher BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    INDEX idx_asg_staff (staff_id),
+    INDEX idx_asg_classroom (classroom),
+    INDEX idx_asg_tenant (tenant_id),
+    CONSTRAINT fk_asg_staff FOREIGN KEY (staff_id) REFERENCES institution_staff(id) ON DELETE CASCADE,
+    CONSTRAINT fk_asg_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+    );
+-- 7. TABLA DE COMUNICADOS INSTITUCIONALES
 CREATE TABLE IF NOT EXISTS institution_announcements (
                                                          id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -135,7 +152,7 @@ CREATE TABLE IF NOT EXISTS institution_announcements (
     CONSTRAINT fk_announcement_student FOREIGN KEY (target_student_id) REFERENCES students(id) ON DELETE CASCADE
     );
 
--- 7. TABLA PERSONAS AUTORIZADAS PARA RETIRO
+-- 8. TABLA PERSONAS AUTORIZADAS PARA RETIRO
 CREATE TABLE IF NOT EXISTS student_authorized_pickups (
                                                           id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -156,7 +173,7 @@ CREATE TABLE IF NOT EXISTS student_authorized_pickups (
     CONSTRAINT fk_pickup_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 8. TABLA RESTRICCIONES JUDICIALES CERTIFICADAS
+-- 9. TABLA RESTRICCIONES JUDICIALES CERTIFICADAS
 CREATE TABLE IF NOT EXISTS student_judicial_restrictions (
                                                              id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -180,7 +197,7 @@ CREATE TABLE IF NOT EXISTS student_judicial_restrictions (
     CONSTRAINT fk_restr_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 9. TABLA CUOTAS Y ARANCELES ESCOLARES
+-- 10. TABLA CUOTAS Y ARANCELES ESCOLARES
 CREATE TABLE IF NOT EXISTS student_fees (
                                             id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -200,7 +217,7 @@ CREATE TABLE IF NOT EXISTS student_fees (
     CONSTRAINT fk_fees_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 10. TABLA HISTÓRICO DE ALUMNOS DADOS DE BAJA
+-- 11. TABLA HISTÓRICO DE ALUMNOS DADOS DE BAJA
 CREATE TABLE IF NOT EXISTS student_history (
                                                id VARCHAR(36) NOT NULL,
     first_name VARCHAR(100) NOT NULL,
@@ -215,8 +232,52 @@ CREATE TABLE IF NOT EXISTS student_history (
     PRIMARY KEY (id)
     );
 
+CREATE TABLE IF NOT EXISTS staff_history (
+                                             id VARCHAR(36) NOT NULL,
+    tenant_id VARCHAR(36) NOT NULL,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    email VARCHAR(150) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    hire_date DATE NOT NULL,
+    baja_date DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    INDEX idx_staff_history_tenant (tenant_id)
+    );
 
+-- 12. TABLA PORTFOLIOS PEDAGÓGICOS DOCENTES
+CREATE TABLE IF NOT EXISTS teacher_portfolios (
+                                                  id VARCHAR(36) NOT NULL,
+    tenant_id VARCHAR(36) NOT NULL,
+    staff_id VARCHAR(36) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    category VARCHAR(50) NOT NULL DEFAULT 'CURSO',
+    description TEXT NOT NULL,
+    media_url VARCHAR(500) NULL,
+    activity_date DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
+    PRIMARY KEY (id),
+    INDEX idx_portfolio_staff (staff_id),
+    INDEX idx_portfolio_tenant (tenant_id),
+    CONSTRAINT fk_portf_staff FOREIGN KEY (staff_id) REFERENCES institution_staff(id) ON DELETE CASCADE,
+    CONSTRAINT fk_portf_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+    );
+
+-- TABLA CATÁLOGO DE MATERIAS (Gestionada desde el sistema)
+CREATE TABLE IF NOT EXISTS academic_subjects (
+                                                 id VARCHAR(36) NOT NULL,
+    tenant_id VARCHAR(36) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    UNIQUE INDEX unq_subject_name_tenant (tenant_id, name),
+    CONSTRAINT fk_subject_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+    );
 -- INSERCIÓN DEL TENANT INICIAL
 INSERT INTO tenants (id, name, cue_code)
 VALUES ('88888888-4444-4444-4444-121212121212', 'Jardín Once Unidos', '0600123-4')

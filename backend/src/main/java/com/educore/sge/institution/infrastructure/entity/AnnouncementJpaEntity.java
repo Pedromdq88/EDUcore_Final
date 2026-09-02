@@ -56,4 +56,7 @@ public class AnnouncementJpaEntity extends BaseInstitutionEntity {
 
     @Column(name = "updated_at", insertable = false, updatable = false)
     private LocalDateTime updatedAt;
+
+    @Column(name = "tenant_id", nullable = false, length = 36)
+    private String tenantId;
 }

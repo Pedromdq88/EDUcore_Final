@@ -2,8 +2,11 @@ package com.educore.sge.institution.web;
 
 import com.educore.sge.institution.infrastructure.entity.InstitutionJpaEntity;
 import com.educore.sge.institution.infrastructure.repository.InstitutionJpaRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.HashMap;
 import java.util.List;
@@ -25,50 +28,38 @@ public class InstitutionController {
         return repository.findAll();
     }
 
-    // 1. GET: Consultar los correos institucionales
+    // 1. GET: Consultar correos oficiales de la institución activa
     @GetMapping("/settings/emails")
     public ResponseEntity<Map<String, String>> getInstitutionalEmails(
-            @RequestHeader(value = "X-Institution-Id", required = false) String institutionId) {
+            @RequestHeader("X-Institution-Id") String institutionId) {
 
-        String targetId = (institutionId != null && !institutionId.isBlank())
-                ? institutionId
-                : "88888888-4444-4444-4444-121212121212";
+        if (institutionId == null || institutionId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Falta la cabecera X-Institution-Id");
+        }
 
-        return repository.findById(targetId)
-                .map(inst -> {
-                    Map<String, String> emails = new HashMap<>();
-                    emails.put("receiptEmail", inst.getReceiptEmail() != null ? inst.getReceiptEmail() : "administracion@onceunidos.com");
-                    emails.put("feeQueryEmail", inst.getFeeQueryEmail() != null ? inst.getFeeQueryEmail() : "tesoreria@onceunidos.com");
-                    return ResponseEntity.ok(emails);
-                })
-                .orElseGet(() -> {
-                    Map<String, String> defaultEmails = new HashMap<>();
-                    defaultEmails.put("receiptEmail", "administracion@onceunidos.com");
-                    defaultEmails.put("feeQueryEmail", "tesoreria@onceunidos.com");
-                    return ResponseEntity.ok(defaultEmails);
-                });
+        InstitutionJpaEntity inst = repository.findById(institutionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Institución no encontrada"));
+
+        Map<String, String> emails = new HashMap<>();
+        emails.put("receiptEmail", inst.getReceiptEmail() != null ? inst.getReceiptEmail() : "");
+        emails.put("feeQueryEmail", inst.getFeeQueryEmail() != null ? inst.getFeeQueryEmail() : "");
+
+        return ResponseEntity.ok(emails);
     }
 
-    // 2. PUT: Modificar y guardar los correos institucionales
+    // 2. PUT: Modificar y guardar los correos de la institución activa
+    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PutMapping("/settings/emails")
     public ResponseEntity<Void> updateInstitutionalEmails(
-            @RequestHeader(value = "X-Institution-Id", required = false) String institutionId,
+            @RequestHeader("X-Institution-Id") String institutionId,
             @RequestBody Map<String, String> body) {
 
-        String targetId = (institutionId != null && !institutionId.isBlank())
-                ? institutionId
-                : "88888888-4444-4444-4444-121212121212";
+        if (institutionId == null || institutionId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Falta la cabecera X-Institution-Id");
+        }
 
-        InstitutionJpaEntity institution = repository.findById(targetId)
-                .orElseGet(() -> {
-                    // Si no existe aún en la BD, se crea con el ID esperado
-                    InstitutionJpaEntity nueva = new InstitutionJpaEntity();
-                    nueva.setId(targetId);
-                    nueva.setName("Jardín Once Unidos");
-                    nueva.setSlug("jardin-once-unidos");
-                    nueva.setStatus("ACTIVE");
-                    return nueva;
-                });
+        InstitutionJpaEntity institution = repository.findById(institutionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Institución no encontrada"));
 
         if (body.containsKey("receiptEmail")) {
             institution.setReceiptEmail(body.get("receiptEmail"));

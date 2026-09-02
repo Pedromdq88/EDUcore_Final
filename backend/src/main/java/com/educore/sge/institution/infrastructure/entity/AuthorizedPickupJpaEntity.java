@@ -16,15 +16,19 @@ import java.time.LocalDateTime;
 public class AuthorizedPickupJpaEntity {
 
     @Id
+    @Column(name = "id", length = 36, nullable = false)
     private String id;
 
-    @Column(name = "student_id", nullable = false)
+    @Column(name = "tenant_id", length = 36, nullable = false)
+    private String tenantId;
+
+    @Column(name = "student_id", length = 36, nullable = false)
     private String studentId;
 
-    @Column(name = "full_name", nullable = false)
+    @Column(name = "full_name", length = 150, nullable = false)
     private String fullName;
 
-    @Column(name = "document_number", nullable = false)
+    @Column(name = "document_number", length = 50, nullable = false)
     private String documentNumber;
 
     @Column(name = "birth_date")
@@ -33,10 +37,10 @@ public class AuthorizedPickupJpaEntity {
     @Column(nullable = false)
     private Integer age;
 
-    @Column(nullable = false)
+    @Column(length = 50, nullable = false)
     private String relationship;
 
-    @Column(nullable = false)
+    @Column(length = 50, nullable = false)
     private String phone;
 
     @Column(name = "created_at", insertable = false, updatable = false)

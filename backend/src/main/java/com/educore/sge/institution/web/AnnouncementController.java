@@ -40,7 +40,12 @@ public class AnnouncementController {
         if ("TEACHER".equals(userRole) && "GLOBAL".equals(body.getScope())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Los docentes solo pueden emitir comunicados para su salita/curso asignado.");
         }
-
+        if (body.getCreatedAt() == null) {
+            body.setCreatedAt(java.time.LocalDateTime.now());
+        }
+        if (body.getIsPinned() == null) {
+            body.setIsPinned(false);
+        }
         body.setId(UUID.randomUUID().toString());
         body.setTenantId(institutionId);
         return ResponseEntity.ok(repository.save(body));

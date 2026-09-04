@@ -8,12 +8,6 @@ import java.util.List;
 
 @Repository
 public interface PortfolioJpaRepository extends JpaRepository<PortfolioJpaEntity, String> {
-
-    List<PortfolioJpaEntity> findAllByTenantIdOrderByActivityDateDesc(String tenantId);
-
     List<PortfolioJpaEntity> findAllByTenantIdAndStaffIdOrderByActivityDateDesc(String tenantId, String staffId);
-
-    List<PortfolioJpaEntity> findAllByTenantIdAndClassroomOrderByActivityDateDesc(String tenantId, String classroom);
-
-    List<PortfolioJpaEntity> findAllByTenantIdAndStudentIdOrderByActivityDateDesc(String tenantId, String studentId);
+    List<PortfolioJpaEntity> findAllByTenantIdOrderByActivityDateDesc(String tenantId);
 }

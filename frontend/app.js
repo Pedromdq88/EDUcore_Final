@@ -17,20 +17,13 @@ let announcementsList = [];
 let currentTutorData = null;
 let currentStaffData = null;
 let currentStudentData = null;
+let currentSchoolProfile = null;
+let hotSpreadsheetInstance = null;
+
+// Catálogo dinámico provisto por el backend según el nivel de la institución
+let currentLevelClassrooms = [];
 
 let navigationHistory = [];
-
-const SECCIONES_SISTEMA = [
-  "1° Sección (3 años)",
-  "2° Sección (4 años)",
-  "3° Sección (5 años)",
-  "1° Grado",
-  "2° Grado",
-  "3° Grado",
-  "4° Grado",
-  "5° Grado",
-  "6° Grado"
-];
 
 // Helper global para peticiones HTTP Multi-Tenant blindadas
 async function apiFetch(endpoint, options = {}) {
@@ -74,56 +67,51 @@ let selectedStudentForRestricciones = null;
 let currentStudentRestrictions = [];
 
 // ========================================================
-// REGLA DE CORTE ESCOLAR AL 30 DE JUNIO
+// REGLA DE CORTE ESCOLAR Y ASIGNACIÓN SEGÚN NIVEL
 // ========================================================
 
-function calcularSala(fechaNacimientoStr, cicloLectivo = new Date().getFullYear()) {
+function calcularSala(fechaNacimientoStr, cicloLectivo = (currentSchoolProfile?.academicYear || new Date().getFullYear())) {
   if (!fechaNacimientoStr) return { valida: false, sala: "", error: "Seleccione fecha de nacimiento" };
 
   const [anioNac, mesNac, diaNac] = fechaNacimientoStr.split('-').map(Number);
   if (!anioNac || !mesNac || !diaNac) return { valida: false, sala: "", error: "Fecha incompleta" };
 
+  const nivel = currentSchoolProfile?.educationLevel || 'JARDIN';
+
   const edadAlCorte = mesNac >= 7
       ? (cicloLectivo - anioNac - 1)
       : (cicloLectivo - anioNac);
 
-  switch (edadAlCorte) {
-    case 3:
-      return { valida: true, sala: "1° Sección (3 años)", error: null };
-    case 4:
-      return { valida: true, sala: "2° Sección (4 años)", error: null };
-    case 5:
-      return { valida: true, sala: "3° Sección (5 años)", error: null };
-    default:
-      if (edadAlCorte < 3) {
-        return { valida: false, sala: null, error: `❌ No admisible: Cumple ${edadAlCorte} años al 30/06 (Mínimo 3 años para 1° Sección)` };
-      } else {
-        return { valida: false, sala: null, error: `❌ No admisible: Cumple ${edadAlCorte} años al 30/06 (Corresponde a Nivel Primario)` };
-      }
+  // Si es Nivel Inicial se aplica la regla legal estricta al 30 de junio
+  if (nivel === 'JARDIN') {
+    switch (edadAlCorte) {
+      case 3:
+        return { valida: true, sala: "1° Sección (3 años)", error: null };
+      case 4:
+        return { valida: true, sala: "2° Sección (4 años)", error: null };
+      case 5:
+        return { valida: true, sala: "3° Sección (5 años)", error: null };
+      default:
+        if (edadAlCorte < 3) {
+          return { valida: false, sala: null, error: `❌ No admisible: Cumple ${edadAlCorte} años al 30/06 (Mínimo 3 años para Sala de 3)` };
+        } else {
+          return { valida: false, sala: null, error: `❌ Cumple ${edadAlCorte} años al 30/06 (Corresponde a Nivel Primario)` };
+        }
+    }
   }
-}
 
-function populateAcademicYearSelects() {
-  const anioActual = new Date().getFullYear();
-  const anios = [anioActual - 1, anioActual, anioActual + 1, anioActual + 2];
-
-  const htmlOptions = anios.map(a =>
-      `<option value="${a}" ${a === anioActual ? 'selected' : ''}>Ciclo Lectivo ${a}</option>`
-  ).join('');
-
-  const selMatricula = document.getElementById('studentAcademicYear');
-  const selEdicion = document.getElementById('edit-student-academicYear');
-
-  if (selMatricula) selMatricula.innerHTML = htmlOptions;
-  if (selEdicion) selEdicion.innerHTML = htmlOptions;
+  // En Primaria y Secundaria la asignación la define el selector oficial
+  return { valida: true, sala: "", edadCalculada: edadAlCorte, error: null };
 }
 
 function recalcularSalaFormularioMatricula() {
   const birthDate = document.getElementById('studentBirthDate')?.value;
-  const cicloLectivo = parseInt(document.getElementById('studentAcademicYear')?.value || new Date().getFullYear());
+  const cicloLectivo = currentSchoolProfile?.academicYear || new Date().getFullYear();
+  const nivel = currentSchoolProfile?.educationLevel || 'JARDIN';
 
   const labelSala = document.getElementById('labelSalaCalculada');
   const hiddenClassroom = document.getElementById('studentClassroom');
+  const selectClassroom = document.getElementById('student-classroom');
 
   if (!birthDate) {
     if (labelSala) {
@@ -135,20 +123,31 @@ function recalcularSalaFormularioMatricula() {
   }
 
   const res = calcularSala(birthDate, cicloLectivo);
-  if (res.valida) {
-    labelSala.textContent = res.sala;
-    labelSala.className = "text-sm font-bold text-emerald-800";
-    hiddenClassroom.value = res.sala;
+
+  if (nivel === 'JARDIN') {
+    if (res.valida) {
+      labelSala.textContent = res.sala;
+      labelSala.className = "text-sm font-bold text-emerald-800";
+      if (hiddenClassroom) hiddenClassroom.value = res.sala;
+      if (selectClassroom) selectClassroom.value = res.sala;
+    } else {
+      labelSala.textContent = res.error;
+      labelSala.className = "text-xs font-bold text-rose-600";
+      if (hiddenClassroom) hiddenClassroom.value = "";
+    }
   } else {
-    labelSala.textContent = res.error;
-    labelSala.className = "text-xs font-bold text-rose-600";
-    hiddenClassroom.value = "";
+    // Primaria o Secundaria: solo muestra la edad al corte
+    if (labelSala) {
+      labelSala.textContent = `Edad al 30/06: ${res.edadCalculada} años`;
+      labelSala.className = "text-sm font-bold text-slate-700";
+    }
   }
 }
 
 function recalcularSalaFormularioEdicion() {
   const birthDate = document.getElementById('edit-student-nacimiento')?.value;
-  const cicloLectivo = parseInt(document.getElementById('edit-student-academicYear')?.value || new Date().getFullYear());
+  const cicloLectivo = currentSchoolProfile?.academicYear || new Date().getFullYear();
+  const nivel = currentSchoolProfile?.educationLevel || 'JARDIN';
 
   const labelSala = document.getElementById('edit-labelSalaCalculada');
   const hiddenClassroom = document.getElementById('edit-student-classroom');
@@ -156,14 +155,26 @@ function recalcularSalaFormularioEdicion() {
   if (!birthDate) return;
 
   const res = calcularSala(birthDate, cicloLectivo);
-  if (res.valida) {
-    labelSala.textContent = res.sala;
-    labelSala.className = "text-xs font-bold text-emerald-800";
-    hiddenClassroom.value = res.sala;
+
+  if (nivel === 'JARDIN') {
+    if (res.valida) {
+      if (labelSala) {
+        labelSala.textContent = res.sala;
+        labelSala.className = "text-xs font-bold text-emerald-800";
+      }
+      if (hiddenClassroom) hiddenClassroom.value = res.sala;
+    } else {
+      if (labelSala) {
+        labelSala.textContent = res.error;
+        labelSala.className = "text-xs font-bold text-rose-600";
+      }
+      if (hiddenClassroom) hiddenClassroom.value = "";
+    }
   } else {
-    labelSala.textContent = res.error;
-    labelSala.className = "text-xs font-bold text-rose-600";
-    hiddenClassroom.value = "";
+    if (labelSala) {
+      labelSala.textContent = `Edad al corte: ${res.edadCalculada} años`;
+      labelSala.className = "text-xs font-bold text-slate-700";
+    }
   }
 }
 
@@ -171,9 +182,50 @@ function recalcularSalaFormularioEdicion() {
 // AUTENTICACIÓN Y NAVEGACIÓN
 // ========================================================
 
+async function loadLoginInstitutions() {
+  const select = document.getElementById('loginInstitutionSelect');
+  if (!select) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/public/institutions`);
+    if (!res.ok) throw new Error("Error al consultar instituciones");
+
+    const tenants = await res.json();
+
+    if (tenants.length === 0) {
+      select.innerHTML = '<option value="">No hay instituciones activas</option>';
+      return;
+    }
+
+    select.innerHTML = tenants.map(t =>
+        `<option value="${t.id}">${t.name} (${t.educationLevel || 'JARDIN'}) ${t.cueCode ? `- CUE: ${t.cueCode}` : ''}</option>`
+    ).join('');
+
+  } catch (err) {
+    console.error("Error cargando tenants:", err);
+    select.innerHTML = '<option value="">Error al cargar instituciones</option>';
+  }
+}
+
 function handleLogin() {
   const email = document.getElementById('emailInput').value.trim();
-  if (!email) return;
+  const selectInst = document.getElementById('loginInstitutionSelect');
+  const detectedInstitutionId = selectInst ? selectInst.value : '';
+
+  if (!email) {
+    alert("Por favor ingrese su email institucional.");
+    return;
+  }
+
+  if (!detectedInstitutionId) {
+    alert("Debe seleccionar una institución válida.");
+    return;
+  }
+
+  // 🧹 Limpieza preventiva de datos previos en memoria
+  activeStudents = [];
+  activeTutors = [];
+  activeStaff = [];
 
   let role = 'TEACHER';
   if (email.includes('direccion') || email.includes('director')) role = 'DIRECTOR';
@@ -181,13 +233,11 @@ function handleLogin() {
   else if (email.includes('preceptor')) role = 'PRECEPTOR';
   else if (email.includes('tutor') || email.includes('padre')) role = 'TUTOR';
 
-  // Identificador de la institución activa asignado en la sesión
-  const detectedInstitutionId = "88888888-4444-4444-4444-121212121212";
-
   currentSession.email = email;
   currentSession.role = role;
   currentSession.institutionId = detectedInstitutionId;
 
+  // Persistencia limpia en sessionStorage
   sessionStorage.setItem('current_user_email', email);
   sessionStorage.setItem('current_user_role', role);
   sessionStorage.setItem('current_institution_id', detectedInstitutionId);
@@ -202,13 +252,77 @@ function handleLogin() {
   document.getElementById('loginPage').classList.add('hidden');
   document.getElementById('mainDashboard').classList.remove('hidden');
 
-  populateAcademicYearSelects();
   refreshAllData();
 }
 
 function handleLogout() {
+  sessionStorage.removeItem('current_user_email');
+  sessionStorage.removeItem('current_user_role');
+  sessionStorage.removeItem('current_institution_id');
   sessionStorage.clear();
   location.reload();
+}
+
+let targetSelectParaCrearTutor = null;
+
+function abrirModalRapidoTutor(selectId) {
+  targetSelectParaCrearTutor = selectId;
+  const form = document.getElementById('formTutorRapido');
+  if (form) form.reset();
+  document.getElementById('tutorModalRapido')?.classList.remove('hidden');
+}
+
+function cerrarModalRapidoTutor() {
+  document.getElementById('tutorModalRapido')?.classList.add('hidden');
+  targetSelectParaCrearTutor = null;
+}
+
+async function submitTutorRapido(e) {
+  e.preventDefault();
+
+  const payload = {
+    firstName: document.getElementById('tutorModalFirstName').value.trim(),
+    lastName: document.getElementById('tutorModalLastName').value.trim(),
+    documentNumber: document.getElementById('tutorModalDni').value.trim(),
+    relationship: document.getElementById('tutorModalRelationship').value, // 👈 Captura correcta del vínculo
+    phone: document.getElementById('tutorModalPhone').value.trim(),
+    email: document.getElementById('tutorModalEmail').value.trim(),
+    nacionalidad: document.getElementById('tutorModalNacionalidad').value.trim(),
+    profesion: document.getElementById('tutorModalProfesion').value.trim(),
+    condicionActividad: document.getElementById('tutorModalActividad').value,
+    convive: document.getElementById('tutorModalConvive').value,
+    direccion: document.getElementById('tutorModalDireccion').value.trim(),
+    tenantId: currentSession.institutionId
+  };
+
+  try {
+    const res = await apiFetch('/tutors', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      const nuevoTutor = await res.json();
+      await fetchTutors();
+
+      if (targetSelectParaCrearTutor) {
+        document.getElementById(targetSelectParaCrearTutor).value = nuevoTutor.id;
+        const num = targetSelectParaCrearTutor.replace('studentTutor', '');
+        const buscadorEl = document.getElementById(`buscadorTutor${num}`);
+        if (buscadorEl) {
+          buscadorEl.value = `${nuevoTutor.lastName}, ${nuevoTutor.firstName} (DNI: ${nuevoTutor.documentNumber || '-'})`;
+        }
+      }
+
+      cerrarModalRapidoTutor();
+      alert("✅ Tutor registrado y seleccionado correctamente.");
+    } else {
+      const errText = await res.text();
+      alert(`Error al registrar el tutor: ${errText}`);
+    }
+  } catch (error) {
+    console.error("Error en alta rápida de tutor:", error);
+  }
 }
 
 function showSection(sectionId, clearHistory = true) {
@@ -218,6 +332,8 @@ function showSection(sectionId, clearHistory = true) {
 
   document.querySelectorAll('.dashboard-view').forEach(v => v.classList.add('hidden'));
 
+  ocultarYLimpiarFormulariosAlta();
+
   const targetView = document.getElementById(sectionId);
   if (targetView) targetView.classList.remove('hidden');
 
@@ -226,6 +342,8 @@ function showSection(sectionId, clearHistory = true) {
   if (btn) btn.classList.add('bg-emerald-50', 'text-emerald-700');
 
   if (sectionId === 'inicioView') renderInicioFeed();
+  if (sectionId === 'schoolProfileView') renderSchoolProfile();
+  if (sectionId === 'spreadsheetView') renderSpreadsheetTable();
   if (sectionId === 'materiasView') renderMateriasView();
   if (sectionId === 'cuotasView') renderCuotasView();
   if (sectionId === 'retirosView') renderRetirosView();
@@ -236,6 +354,7 @@ function showSection(sectionId, clearHistory = true) {
 function toggleForm(id) { document.getElementById(id).classList.toggle('hidden'); }
 
 function refreshAllData() {
+  fetchSchoolProfile();
   fetchTutors();
   fetchStudents();
   fetchStaff();
@@ -244,8 +363,8 @@ function refreshAllData() {
 }
 
 function getInitials(name) {
-  if (!name) return '--';
-  return name.trim().split(/\s+/).slice(0, 2).map(n => n[0].toUpperCase()).join('');
+  if (!name || typeof name !== 'string') return '--';
+  return name.trim().split(/\s+/).slice(0, 2).map(n => n && n[0] ? n[0].toUpperCase() : '').join('');
 }
 
 function normalizarTexto(txt) {
@@ -321,7 +440,6 @@ async function crearMateriaSubmit(e) {
   const raw = input.value.trim();
   if (!raw) return;
 
-  // Capitalización de la primera letra
   const formattedName = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
 
   try {
@@ -360,16 +478,17 @@ async function eliminarMateria(id) {
 // ========================================================
 
 function generarFilaAsignacionDocenteHtml(data = {}) {
-  const subjectSelected = data.subject || (activeSubjects[0]?.name || 'Docente Titular de Sala');
-  const classroomSelected = data.classroom || '1° Sección (3 años)';
+  const defaultClass = currentLevelClassrooms[0] || '1° Sección (3 años)';
+  const subjectSelected = data.subject || (activeSubjects[0]?.name || 'Docente Titular');
+  const classroomSelected = data.classroom || defaultClass;
   const shiftSelected = data.shift || 'MANANA';
   const isTeacherSelected = data.isClassroomTeacher === true;
 
   const subjectOptions = activeSubjects.length > 0
       ? activeSubjects.map(s => `<option value="${s.name}" ${s.name === subjectSelected ? 'selected' : ''}>${s.name}</option>`).join('')
-      : `<option value="Docente Titular de Sala">Docente Titular de Sala</option>`;
+      : `<option value="Docente Titular">Docente Titular</option>`;
 
-  const classroomOptions = SECCIONES_SISTEMA.map(c =>
+  const classroomOptions = currentLevelClassrooms.map(c =>
       `<option value="${c}" ${c === classroomSelected ? 'selected' : ''}>${c}</option>`
   ).join('');
 
@@ -613,7 +732,7 @@ function viewStaffProfile(id) {
     }));
   } else if (staffMember.classroom) {
     cursosAsignados = [{
-      nombre: "Docente Titular de Sala",
+      nombre: "Docente Titular",
       seccion: staffMember.classroom,
       turno: "Turno Mañana",
       cantidadAlumnos: activeStudents.filter(s => s.classroom === staffMember.classroom).length,
@@ -782,7 +901,7 @@ async function confirmarBajaStaff() {
   const tiempoTrabajado = calcularTiempoTrabajado(fechaIngreso);
 
   const confirmacion = confirm(
-      `¿Dar de baja al docente/personal "${nombreCompleto}"?\n\n` +
+      `¿Dar de baja al personal "${nombreCompleto}"?\n\n` +
       `Antigüedad: ${tiempoTrabajado}\nFecha ingreso: ${fechaIngreso || 'N/D'}`
   );
   if (!confirmacion) return;
@@ -805,7 +924,7 @@ async function confirmarBajaStaff() {
 }
 
 // ========================================================
-// MÓDULO 3: PORTFOLIO PROFESIONAL EN EL LEGAJO (LINKEDIN)
+// MÓDULO 3: PORTFOLIO PROFESIONAL
 // ========================================================
 
 async function fetchDocentePortfolios(staffId) {
@@ -825,7 +944,7 @@ function renderDocentePortfolios() {
   if (portfoliosList.length === 0) {
     container.innerHTML = `
       <div class="col-span-2 p-5 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-400">
-        Este docente aún no ha registrado cursos, capacitaciones o títulos en su portfolio profesional.
+        Este docente aún no ha registrado capacitaciones en su portfolio profesional.
       </div>
     `;
     return;
@@ -898,7 +1017,7 @@ async function guardarPortfolio(e) {
 }
 
 async function eliminarPortfolioDocente(id) {
-  if (!confirm("¿Deseas eliminar este certificado del portfolio?")) return;
+  if (!confirm("¿Deseas eliminar este registro del portfolio?")) return;
 
   try {
     const res = await apiFetch(`/portfolios/${id}`, { method: 'DELETE' });
@@ -918,9 +1037,19 @@ async function fetchTutors() {
   try {
     const r = await apiFetch('/tutors');
     activeTutors = r.ok ? await r.json() : [];
-    document.getElementById('countTutorsBadge').innerText = activeTutors.length;
 
-    document.getElementById('tutorsTableBody').innerHTML = activeTutors.map(t => `
+    const countBadge = document.getElementById('countTutorsBadge');
+    if (countBadge) countBadge.innerText = activeTutors.length;
+
+    const tbody = document.getElementById('tutorsTableBody');
+    if (!tbody) return;
+
+    if (activeTutors.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400 text-xs">No hay tutores registrados.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = activeTutors.map(t => `
       <tr class="hover:bg-slate-50/80 transition-colors">
         <td class="p-3 font-semibold text-slate-900">${t.lastName || ''}, ${t.firstName || ''}</td>
         <td class="p-3 text-slate-600 font-medium">${t.documentNumber || '--'}</td>
@@ -934,7 +1063,9 @@ async function fetchTutors() {
     `).join('');
 
     populateTutorSelects();
-  } catch(e) { console.error("Error tutores:", e); }
+  } catch(e) {
+    console.error("Error tutores:", e);
+  }
 }
 
 function populateTutorSelects() {
@@ -1018,7 +1149,12 @@ function setTutorData(data) {
   document.getElementById('tutor-dni').textContent = `DNI: ${data.dni || '-'}`;
   document.getElementById('tutor-celular').textContent = data.celular || '-';
   document.getElementById('tutor-email').textContent = data.email || '-';
+  document.getElementById('tutor-nacionalidad').textContent = data.nacionalidad || '-';
+  document.getElementById('tutor-profesion').textContent = data.profesion || '-';
+  document.getElementById('tutor-actividad').textContent = data.condicionActividad || '-';
+  document.getElementById('tutor-convive').textContent = data.conviveEstudiante || '-';
   document.getElementById('tutor-domicilio').textContent = data.domicilio || '-';
+
 
   const hijosCont = document.getElementById('hijos-container');
   hijosCont.innerHTML = '';
@@ -1058,19 +1194,27 @@ function hideTutorProfile() {
 
 function abrirModalEdicionTutor() {
   if (!currentTutorData) return;
-  document.getElementById('edit-nombre').value = currentTutorData.nombre || '';
-  document.getElementById('edit-apellido').value = currentTutorData.apellido || '';
-  document.getElementById('edit-vinculo').value = currentTutorData.vinculo || 'Madre';
-  document.getElementById('edit-dni').value = currentTutorData.dni || '';
-  document.getElementById('edit-celular').value = currentTutorData.celular || '';
-  document.getElementById('edit-email').value = currentTutorData.email || '';
-  document.getElementById('edit-calle').value = currentTutorData.domicilio || '';
-  document.getElementById('tutorEditModal').classList.remove('hidden');
+
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val || '';
+  };
+
+  setVal('edit-nombre', currentTutorData.nombre);
+  setVal('edit-apellido', currentTutorData.apellido);
+  setVal('edit-vinculo', currentTutorData.vinculo || 'PADRE');
+  setVal('edit-dni', currentTutorData.dni);
+  setVal('edit-nacionalidad', currentTutorData.nacionalidad || 'Argentina');
+  setVal('edit-profesion', currentTutorData.profesion);
+  setVal('edit-actividad', currentTutorData.condicionActividad || 'Trabaja');
+  setVal('edit-celular', currentTutorData.celular);
+  setVal('edit-email', currentTutorData.email);
+  setVal('edit-calle', currentTutorData.domicilio);
+  setVal('edit-convive', currentTutorData.conviveEstudiante || 'Sí');
+
+  document.getElementById('tutorEditModal')?.classList.remove('hidden');
 }
 
-function cerrarModalEdicionTutor() {
-  document.getElementById('tutorEditModal').classList.add('hidden');
-}
 
 async function guardarDatosTutor(e) {
   e.preventDefault();
@@ -1082,23 +1226,42 @@ async function guardarDatosTutor(e) {
     lastName: document.getElementById('edit-apellido').value.trim(),
     relationship: document.getElementById('edit-vinculo').value,
     documentNumber: document.getElementById('edit-dni').value.trim(),
+    nacionalidad: document.getElementById('edit-nacionalidad').value.trim(),
+    profesion: document.getElementById('edit-profesion').value.trim(), // 👈 Envía la profesión editada
+    condicionActividad: document.getElementById('edit-actividad').value,
     phone: document.getElementById('edit-celular').value.trim(),
     email: document.getElementById('edit-email').value.trim(),
-    direccion: document.getElementById('edit-calle').value.trim()
+    direccion: document.getElementById('edit-calle').value.trim(),
+    convive: document.getElementById('edit-convive').value,
+    tenantId: currentSession.institutionId
   };
 
   try {
-    await apiFetch(`/tutors/${currentTutorData.id}`, {
+    const res = await apiFetch(`/tutors/${currentTutorData.id}`, {
       method: 'PUT',
       body: JSON.stringify(updatedData)
     });
-    cerrarModalEdicionTutor();
-    await fetchTutors();
-    viewTutorProfile(currentTutorData.id, true);
+
+    if (res.ok) {
+      cerrarModalEdicionTutor();
+      await fetchTutors();
+      viewTutorProfile(currentTutorData.id, true);
+      alert("✅ Datos del tutor actualizados correctamente.");
+    } else {
+      alert("Error al actualizar los datos en el servidor.");
+    }
   } catch (error) {
     console.error("Error al actualizar tutor:", error);
   }
 }
+
+function cerrarModalEdicionTutor() {
+  const modal = document.getElementById('tutorEditModal');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+}
+
 
 async function confirmarBajaTutor() {
   if (!currentTutorData?.id) return;
@@ -1256,7 +1419,6 @@ function hideStudentProfile() {
 
 function openEditStudentModal() {
   if (!currentStudentData) return;
-  populateAcademicYearSelects();
 
   document.getElementById('edit-student-nombre').value = currentStudentData.firstName || '';
   document.getElementById('edit-student-apellido').value = currentStudentData.lastName || '';
@@ -1265,8 +1427,8 @@ function openEditStudentModal() {
   document.getElementById('edit-student-nacimiento').value = currentStudentData.birthDate || '';
   document.getElementById('edit-student-direccion').value = currentStudentData.address || currentStudentData.direccion || '';
 
-  const selAnio = document.getElementById('edit-student-academicYear');
-  if (selAnio) selAnio.value = currentStudentData.academicYear || new Date().getFullYear();
+  const hiddenClassroom = document.getElementById('edit-student-classroom');
+  if (hiddenClassroom) hiddenClassroom.value = currentStudentData.classroom || '';
 
   recalcularSalaFormularioEdicion();
   document.getElementById('studentEditModal').classList.remove('hidden');
@@ -1281,10 +1443,16 @@ async function guardarDatosAlumno(e) {
   if (!currentStudentData?.id) return;
 
   const birthDateVal = document.getElementById('edit-student-nacimiento').value;
-  const academicYearVal = parseInt(document.getElementById('edit-student-academicYear')?.value || new Date().getFullYear());
+  const academicYearVal = currentSchoolProfile?.academicYear || new Date().getFullYear();
+  const nivel = currentSchoolProfile?.educationLevel || 'JARDIN';
 
-  const checkSala = calcularSala(birthDateVal, academicYearVal);
-  if (!checkSala.valida) { alert(checkSala.error); return; }
+  let aulaFinal = document.getElementById('edit-student-classroom')?.value;
+
+  if (nivel === 'JARDIN') {
+    const checkSala = calcularSala(birthDateVal, academicYearVal);
+    if (!checkSala.valida) { alert(checkSala.error); return; }
+    aulaFinal = checkSala.sala;
+  }
 
   const updatedPayload = {
     ...currentStudentData,
@@ -1294,7 +1462,7 @@ async function guardarDatosAlumno(e) {
     documentNumber: document.getElementById('edit-student-dni').value.trim(),
     birthDate: birthDateVal,
     academicYear: academicYearVal,
-    classroom: checkSala.sala,
+    classroom: aulaFinal,
     address: document.getElementById('edit-student-direccion').value.trim()
   };
 
@@ -1305,10 +1473,16 @@ async function guardarDatosAlumno(e) {
     });
     if (!response.ok) throw new Error("Error al actualizar alumno");
 
-    alert("¡Ficha del alumno actualizada!");
+    const alumnoActualizado = await response.json();
+    currentStudentData = alumnoActualizado;
+
+    const idx = activeStudents.findIndex(s => s.id === alumnoActualizado.id);
+    if (idx !== -1) activeStudents[idx] = alumnoActualizado;
+
     closeEditStudentModal();
-    await fetchStudents();
-    await showStudentProfile(currentStudentData.id, true);
+    renderStudentsTable(activeStudents);
+    await showStudentProfile(alumnoActualizado.id, true);
+    alert("¡Ficha del alumno actualizada!");
   } catch (error) {
     alert(error.message);
   }
@@ -1332,11 +1506,20 @@ async function confirmarBajaAlumno() {
 
 async function submitStudent() {
   const birthDateValue = document.getElementById('studentBirthDate')?.value;
-  const academicYearVal = parseInt(document.getElementById('studentAcademicYear')?.value || new Date().getFullYear());
+  const academicYearVal = currentSchoolProfile?.academicYear || new Date().getFullYear();
+  const nivel = currentSchoolProfile?.educationLevel || 'JARDIN';
 
   if (!birthDateValue) { alert("Fecha de nacimiento obligatoria."); return; }
-  const checkSala = calcularSala(birthDateValue, academicYearVal);
-  if (!checkSala.valida) { alert(checkSala.error); return; }
+
+  let aulaFinal = document.getElementById('student-classroom')?.value;
+
+  if (nivel === 'JARDIN') {
+    const checkSala = calcularSala(birthDateValue, academicYearVal);
+    if (!checkSala.valida) { alert(checkSala.error); return; }
+    aulaFinal = checkSala.sala;
+  } else {
+    if (!aulaFinal) { alert("Debe seleccionar un año/grado."); return; }
+  }
 
   const tutor1Id = document.getElementById('studentTutor1')?.value;
   const tutor2Id = document.getElementById('studentTutor2')?.value;
@@ -1353,7 +1536,7 @@ async function submitStudent() {
     documentNumber: document.getElementById('studentDni')?.value.trim() || '',
     birthDate: birthDateValue,
     academicYear: academicYearVal,
-    classroom: checkSala.sala,
+    classroom: aulaFinal,
     address: document.getElementById('studentDireccion')?.value.trim() || '',
     status: "ACTIVE"
   };
@@ -1373,7 +1556,7 @@ async function submitStudent() {
       });
     }
 
-    alert(`¡Matrícula aprobada! Asignado a: ${checkSala.sala}`);
+    alert(`¡Matrícula aprobada! Asignado a: ${aulaFinal}`);
     toggleForm('studentFormContainer');
     refreshAllData();
   } catch (error) {
@@ -1495,8 +1678,9 @@ function volverAListaCuotas() {
 }
 
 async function fetchStudentFees(studentId) {
+  const anio = currentSchoolProfile?.academicYear || 2026;
   try {
-    const res = await apiFetch(`/students/${studentId}/fees?academicYear=2026`);
+    const res = await apiFetch(`/students/${studentId}/fees?academicYear=${anio}`);
     studentFeesList = res.ok ? await res.json() : [];
   } catch (e) {
     studentFeesList = [];
@@ -1571,42 +1755,36 @@ function clickCasilleroEdicion(mesId) {
 
 async function guardarCambiosCuotas() {
   if (!selectedStudentForCuotas) return;
+  const anio = currentSchoolProfile?.academicYear || 2026;
 
   try {
-    // 1. Ejecutar las modificaciones pendientes contra el backend
     for (const m of ARANCELES_CICLO_LECTIVO) {
       const dbFee = studentFeesList.find(f => f.monthNumber === m.id);
       const isPaidCurrently = dbFee ? (dbFee.status === 'PAID') : false;
       const willBePaid = tempFeesState[m.id] === true;
 
       if (isPaidCurrently !== willBePaid) {
-        await apiFetch(`/students/${selectedStudentForCuotas}/fees/toggle?academicYear=2026&monthNumber=${m.id}`, {
+        await apiFetch(`/students/${selectedStudentForCuotas}/fees/toggle?academicYear=${anio}&monthNumber=${m.id}`, {
           method: 'POST'
         });
       }
     }
 
-    // 2. Traer inmediatamente el estado actualizado y fresco desde la base de datos
     await fetchStudentFees(selectedStudentForCuotas);
 
-    // 3. Sincronizar el estado en memoria con lo devuelto por el backend
     tempFeesState = {};
     studentFeesList.forEach(f => {
       tempFeesState[f.monthNumber] = (f.status === 'PAID');
     });
 
-    // 4. Salir del modo edición visualmente
     isEditingCuotas = false;
     document.getElementById('btnHabilitarEdicionCuotas').classList.remove('hidden');
     document.getElementById('btnGuardarEdicionCuotas').classList.add('hidden');
     document.getElementById('btnCancelarEdicionCuotas').classList.add('hidden');
     document.getElementById('badgeModoEdicion').classList.add('hidden');
 
-    // 5. Redibujar inmediatamente los casilleros en el DOM
     dibujarCasillerosCuotas();
-
     alert("¡Cuotas actualizadas exitosamente!");
-
   } catch (error) {
     console.error("Error al guardar cuotas:", error);
     alert("Hubo un error al guardar los pagos. Revise la conexión.");
@@ -2164,7 +2342,7 @@ function renderCardHtml(a, canEditIfAuthorized) {
       <div class="flex justify-between items-start">
         <div class="flex items-center gap-2">
           <span class="border text-[10px] font-bold px-2 py-0.5 rounded uppercase ${badgeClass}">${a.category}</span>
-          <span class="text-xs font-semibold text-slate-600">${a.scope === 'GLOBAL' ? 'Todo el Jardín' : (a.scope === 'CLASSROOM' ? `Sección: ${a.targetClassroom}` : 'Mensaje Privado')}</span>
+          <span class="text-xs font-semibold text-slate-600">${a.scope === 'GLOBAL' ? 'Toda la Escuela' : (a.scope === 'CLASSROOM' ? `Sección: ${a.targetClassroom}` : 'Mensaje Privado')}</span>
         </div>
         ${canManage ? `
           <div class="flex items-center gap-1">
@@ -2278,6 +2456,576 @@ async function eliminarComunicado(id) {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  populateAcademicYearSelects();
+document.addEventListener('DOMContentLoaded', async () =>{
+  if (currentSession.email && currentSession.institutionId) {
+    document.getElementById('loginPage').classList.add('hidden');
+    document.getElementById('mainDashboard').classList.remove('hidden');
+    document.getElementById('userDisplay').innerText = currentSession.email;
+    document.getElementById('roleBadge').innerText =
+        currentSession.role === 'DIRECTOR' ? 'Directora' :
+            (currentSession.role === 'ADMINISTRATIVE' ? 'Administrativo' :
+                (currentSession.role === 'PRECEPTOR' ? 'Preceptor/a' :
+                    (currentSession.role === 'TUTOR' ? 'Tutor' : 'Docente')));
+    refreshAllData();
+  } else {
+    loadLoginInstitutions();
+  }
 });
+
+// ========================================================
+// MÓDULO: PERFIL INSTITUCIONAL, TICKETS Y PLANILLA
+// ========================================================
+
+// Cabeceras exclusivas de Alumnos para la planilla y exportación
+const spreadsheetHeaders = [
+  "N° Legajo", "Apellido", "Nombre", "DNI", "Fecha Nac.", "Dirección", "Sección / Aula"
+];
+
+async function fetchSchoolProfile() {
+  try {
+    const res = await apiFetch('/institution/profile');
+    if (res.ok) {
+      const data = await res.json();
+
+      currentSchoolProfile = data.profile;
+      currentSchoolProfile.educationLevel = data.educationLevel;
+      currentSchoolProfile.levelDisplayName = data.levelDisplayName;
+
+      currentLevelClassrooms = data.classrooms || [];
+
+      renderSchoolProfile();
+      actualizarTodosLosSelectoresDeAulas();
+    }
+  } catch (error) {
+    console.error("Error al cargar perfil de escuela:", error);
+  }
+}
+
+function renderSchoolProfile() {
+  if (!currentSchoolProfile) return;
+
+  const schoolName = currentSchoolProfile.name || 'Establecimiento Escolar';
+  const nameDisplay = document.getElementById('schoolNameDisplay');
+  if (nameDisplay) nameDisplay.textContent = schoolName;
+
+  const headerName = document.getElementById('headerSchoolName');
+  if (headerName) headerName.textContent = schoolName;
+  const inicioTitle = document.getElementById('inicioSchoolTitle');
+  if (inicioTitle) inicioTitle.textContent = schoolName;
+
+  const initialsEl = document.getElementById('schoolInitials');
+  if (initialsEl) initialsEl.textContent = getInitials(schoolName);
+
+  const cueBadge = document.getElementById('schoolCueBadge');
+  if (cueBadge) cueBadge.textContent = `CUE: ${currentSchoolProfile.cue || '-'}`;
+
+  const sectorBadge = document.getElementById('schoolSectorBadge');
+  if (sectorBadge) sectorBadge.textContent = `Sector: ${currentSchoolProfile.sector || '-'}`;
+
+  const levelBadge = document.getElementById('schoolLevelsBadge');
+  if (levelBadge) {
+    levelBadge.textContent = `Nivel: ${currentSchoolProfile.levelDisplayName || currentSchoolProfile.educationLevel || '-'}`;
+  }
+
+  const cutoffEl = document.getElementById('schoolCutoffDateDisplay');
+  if (cutoffEl) cutoffEl.textContent = "30 de Junio";
+
+  const cycleVal = currentSchoolProfile.academicYear || 2026;
+  const cycleDisplay = document.getElementById('schoolActiveCycleDisplay');
+  if (cycleDisplay) {
+    cycleDisplay.value = `Ciclo Lectivo ${cycleVal}`;
+  }
+  const cycleSelect = document.getElementById('schoolActiveCycleSelect');
+  if (cycleSelect) {
+    cycleSelect.value = cycleVal.toString();
+  }
+
+  const legalEl = document.getElementById('schoolLegalName');
+  if (legalEl) legalEl.textContent = currentSchoolProfile.legalName || '-';
+
+  const distEl = document.getElementById('schoolDistrict');
+  if (distEl) distEl.textContent = currentSchoolProfile.district || '-';
+
+  const dipEl = document.getElementById('schoolDIPREGEP');
+  if (dipEl) dipEl.textContent = currentSchoolProfile.dipregep || '-';
+
+  const shiftsEl = document.getElementById('schoolShifts');
+  if (shiftsEl) shiftsEl.textContent = currentSchoolProfile.shifts || '-';
+
+  const addrEl = document.getElementById('schoolAddress');
+  if (addrEl) addrEl.textContent = currentSchoolProfile.address || '-';
+
+  const cityEl = document.getElementById('schoolCity');
+  if (cityEl) cityEl.textContent = currentSchoolProfile.city || '-';
+
+  const phoneEl = document.getElementById('schoolPhone');
+  if (phoneEl) phoneEl.textContent = currentSchoolProfile.phone || '-';
+
+  const emailEl = document.getElementById('schoolEmail');
+  if (emailEl) emailEl.textContent = currentSchoolProfile.email || '-';
+
+  const roleBadge = document.getElementById('schoolRoleBadge');
+  const adminNotice = document.getElementById('schoolAdminNotice');
+  const actionContainer = document.getElementById('schoolActionBtnContainer');
+
+  if (roleBadge) roleBadge.textContent = currentSession.role;
+
+  if (actionContainer) {
+    if (currentSession.role === 'DIRECTOR') {
+      actionContainer.innerHTML = `
+        <button onclick="abrirModalEdicionEscuela()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors">
+          <span class="material-icons-outlined text-sm">edit</span> Editar Información
+        </button>
+      `;
+      if (adminNotice) adminNotice.classList.add('hidden');
+      fetchAndRenderTickets();
+    } else if (currentSession.role === 'ADMINISTRATIVE') {
+      actionContainer.innerHTML = `
+        <button onclick="abrirModalEdicionEscuela()" class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors">
+          <span class="material-icons-outlined text-sm">send</span> Solicitar Modificación (Ticket)
+        </button>
+      `;
+      if (adminNotice) adminNotice.classList.remove('hidden');
+      const dirTickets = document.getElementById('directorTicketsContainer');
+      if (dirTickets) dirTickets.classList.add('hidden');
+    } else {
+      actionContainer.innerHTML = '';
+      if (adminNotice) adminNotice.classList.add('hidden');
+      const dirTickets = document.getElementById('directorTicketsContainer');
+      if (dirTickets) dirTickets.classList.add('hidden');
+    }
+  }
+}
+
+function actualizarTodosLosSelectoresDeAulas() {
+  if (!Array.isArray(currentLevelClassrooms) || currentLevelClassrooms.length === 0) return;
+
+  const optionsHtml = currentLevelClassrooms.map(c => `<option value="${c}">${c}</option>`).join('');
+
+  const filtroAlumnos = document.getElementById('filterStudentClassroom');
+  if (filtroAlumnos) filtroAlumnos.innerHTML = '<option value="TODAS">Todas las Secciones</option>' + optionsHtml;
+
+  const selectModalAlumno = document.getElementById('student-classroom');
+  if (selectModalAlumno) selectModalAlumno.innerHTML = '<option value="">Seleccione sala/año...</option>' + optionsHtml;
+
+  const filtroCuotas = document.getElementById('filterCuotasClassroom');
+  if (filtroCuotas) filtroCuotas.innerHTML = '<option value="TODAS">Todas las Secciones</option>' + optionsHtml;
+
+  const filtroRetiros = document.getElementById('filterRetirosClassroom');
+  if (filtroRetiros) filtroRetiros.innerHTML = '<option value="TODAS">Todas las Secciones</option>' + optionsHtml;
+
+  const filtroExcel = document.getElementById('excelCourseFilter');
+  if (filtroExcel) filtroExcel.innerHTML = '<option value="ALL">📋 Todas las Secciones</option>' + optionsHtml;
+
+  const selComunicados = document.getElementById('comunicadoTargetClassroom');
+  if (selComunicados) selComunicados.innerHTML = optionsHtml;
+}
+
+// Tickets para Dirección
+async function fetchAndRenderTickets() {
+  if (currentSession.role !== 'DIRECTOR') return;
+  try {
+    const res = await apiFetch('/institution/profile/tickets');
+    const tickets = res.ok ? await res.json() : [];
+    const container = document.getElementById('directorTicketsContainer');
+    const list = document.getElementById('ticketsList');
+    const countBadge = document.getElementById('labelTicketsCount');
+
+    if (tickets.length === 0) {
+      container.classList.add('hidden');
+      return;
+    }
+
+    container.classList.remove('hidden');
+    countBadge.textContent = `${tickets.length} pendientes`;
+
+    list.innerHTML = tickets.map(t => {
+      let data = {};
+      try { data = JSON.parse(t.proposedDataJson); } catch (e) {}
+
+      return `
+        <div class="bg-amber-50/60 border border-amber-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-slate-800">Solicitado por: ${t.requestedByEmail}</span>
+              <span class="text-[10px] text-slate-400">${t.createdAt ? new Date(t.createdAt).toLocaleDateString('es-AR') : ''}</span>
+            </div>
+            <p class="text-slate-600 mt-1"><strong>Motivo:</strong> ${t.reason}</p>
+            <p class="text-amber-900 font-semibold text-[11px] mt-0.5">Propuesta: Ciclo ${data.academicYear || '-'} | Sede: ${data.name || '-'}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="resolverTicketEscuela('${t.id}', true)" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer">Aprobar</button>
+            <button onclick="resolverTicketEscuela('${t.id}', false)" class="bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer">Rechazar</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    console.error("Error tickets:", e);
+  }
+}
+
+async function resolverTicketEscuela(ticketId, approve) {
+  try {
+    const res = await apiFetch(`/institution/profile/tickets/${ticketId}/resolve?approve=${approve}`, {
+      method: 'POST'
+    });
+    if (res.ok) {
+      alert(approve ? "✅ Solicitud aprobada y aplicada a la escuela." : "❌ Solicitud rechazada.");
+      await fetchSchoolProfile();
+    }
+  } catch (error) {
+    console.error("Error al resolver ticket:", error);
+  }
+}
+
+function abrirModalEdicionEscuela() {
+  if (!currentSchoolProfile) return;
+
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val || '';
+  };
+
+  setVal('edit-school-name', currentSchoolProfile.name);
+  setVal('edit-school-legalname', currentSchoolProfile.legalName);
+  setVal('edit-school-district', currentSchoolProfile.district);
+  setVal('edit-school-sector', currentSchoolProfile.sector || 'Privado');
+  setVal('edit-school-levels', currentSchoolProfile.levels || 'Inicial');
+  setVal('edit-school-shifts', currentSchoolProfile.shifts);
+  setVal('edit-school-city', currentSchoolProfile.city);
+  setVal('edit-school-cycle', currentSchoolProfile.academicYear || 2026);
+  setVal('edit-school-cue', currentSchoolProfile.cue);
+  setVal('edit-school-dipregep', currentSchoolProfile.dipregep);
+  setVal('edit-school-phone', currentSchoolProfile.phone);
+  setVal('edit-school-email', currentSchoolProfile.email);
+  setVal('edit-school-address', currentSchoolProfile.address);
+
+  const reasonContainer = document.getElementById('schoolTicketReasonContainer');
+  const submitBtn = document.getElementById('btnSchoolSubmitModal');
+
+  if (currentSession.role === 'ADMINISTRATIVE') {
+    if (reasonContainer) reasonContainer.classList.remove('hidden');
+    const reasonInput = document.getElementById('edit-school-ticket-reason');
+    if (reasonInput) reasonInput.required = true;
+    if (submitBtn) submitBtn.textContent = 'Enviar Solicitud a Dirección';
+  } else {
+    if (reasonContainer) reasonContainer.classList.add('hidden');
+    const reasonInput = document.getElementById('edit-school-ticket-reason');
+    if (reasonInput) reasonInput.required = false;
+    if (submitBtn) submitBtn.textContent = 'Guardar Cambios';
+  }
+
+  document.getElementById('schoolEditModal')?.classList.remove('hidden');
+}
+
+function cerrarModalEdicionEscuela() {
+  document.getElementById('schoolEditModal').classList.add('hidden');
+}
+
+async function guardarDatosEscuela(e) {
+  e.preventDefault();
+
+  const getVal = (id) => document.getElementById(id)?.value?.trim() || '';
+
+  const proposedData = {
+    ...currentSchoolProfile,
+    name: getVal('edit-school-name'),
+    legalName: getVal('edit-school-legalname'),
+    district: getVal('edit-school-district'),
+    sector: document.getElementById('edit-school-sector')?.value || 'Privado',
+    levels: document.getElementById('edit-school-levels')?.value || 'Inicial',
+    shifts: getVal('edit-school-shifts'),
+    city: getVal('edit-school-city'),
+    academicYear: parseInt(document.getElementById('edit-school-cycle')?.value) || 2026,
+    cue: getVal('edit-school-cue'),
+    dipregep: getVal('edit-school-dipregep'),
+    phone: getVal('edit-school-phone'),
+    email: getVal('edit-school-email'),
+    address: getVal('edit-school-address')
+  };
+
+  if (currentSession.role === 'ADMINISTRATIVE') {
+    const reason = getVal('edit-school-ticket-reason');
+    try {
+      const res = await apiFetch('/institution/profile/tickets', {
+        method: 'POST',
+        body: JSON.stringify({ reason, proposedData })
+      });
+      if (res.ok) {
+        alert("✅ Solicitud enviada exitosamente a Dirección.");
+        cerrarModalEdicionEscuela();
+      }
+    } catch (err) {
+      alert("Error al enviar ticket.");
+    }
+    return;
+  }
+
+  try {
+    const res = await apiFetch('/institution/profile', {
+      method: 'PUT',
+      body: JSON.stringify(proposedData)
+    });
+    if (res.ok) {
+      currentSchoolProfile = await res.json();
+      renderSchoolProfile();
+      cerrarModalEdicionEscuela();
+      alert("✅ Datos institucionales actualizados.");
+      await fetchSchoolProfile();
+    }
+  } catch (err) {
+    alert("Error al guardar cambios de la escuela.");
+  }
+}
+
+// Convertir alumnos a matriz exclusivamente de estudiantes
+function convertStudentsToMatrix(studentsList) {
+  const matrix = [spreadsheetHeaders];
+
+  studentsList.forEach(s => {
+    matrix.push([
+      s.legajoNumber || s.legajo || (s.id ? s.id.substring(0, 8) : '-'),
+      s.lastName || '-',
+      s.firstName || '-',
+      s.documentNumber || '-',
+      s.birthDate || '-',
+      s.address || '-',
+      s.classroom || 'Sin sección'
+    ]);
+  });
+
+  return matrix;
+}
+
+function renderSpreadsheetTable() {
+  const container = document.getElementById('handsontableSpreadsheetContainer');
+  if (!container) return;
+
+  const courseFilter = document.getElementById('excelCourseFilter')?.value || 'ALL';
+  const rawQuery = document.getElementById('excelSearchInput')?.value || '';
+  const searchKeyword = normalizarTexto(rawQuery);
+
+  let filtered = activeStudents;
+
+  if (courseFilter !== 'ALL') {
+    filtered = filtered.filter(s => s.classroom === courseFilter);
+  }
+
+  if (searchKeyword) {
+    filtered = filtered.filter(s => {
+      const full = normalizarTexto(`${s.lastName} ${s.firstName} ${s.documentNumber} ${s.legajoNumber || ''}`);
+      return full.includes(searchKeyword);
+    });
+  }
+
+  const matrix = convertStudentsToMatrix(filtered);
+
+  if (hotSpreadsheetInstance) {
+    hotSpreadsheetInstance.destroy();
+  }
+
+  hotSpreadsheetInstance = new Handsontable(container, {
+    data: matrix,
+    rowHeaders: true,
+    colHeaders: false,
+    height: 480,
+    licenseKey: 'non-commercial-and-evaluation',
+    contextMenu: true,
+    columnSorting: true,
+    dropdownMenu: true,
+    filters: true
+  });
+}
+
+function exportarExcelMultiHojas() {
+  if (activeStudents.length === 0) {
+    alert("No hay alumnos matriculados para exportar.");
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  // 1. Hoja Consolidada General (Solo Alumnos)
+  const generalMatrix = convertStudentsToMatrix(activeStudents);
+  const generalSheet = XLSX.utils.aoa_to_sheet(generalMatrix);
+  XLSX.utils.book_append_sheet(wb, generalSheet, "General_Todos");
+
+  // 2. Hojas filtradas según el catálogo de aulas del nivel activo
+  currentLevelClassrooms.forEach(seccionValida => {
+    const listaCurso = activeStudents.filter(s => s.classroom === seccionValida);
+    if (listaCurso.length > 0) {
+      const cursoMatrix = convertStudentsToMatrix(listaCurso);
+      const cursoSheet = XLSX.utils.aoa_to_sheet(cursoMatrix);
+      const safeName = seccionValida.replace(/[/\\?*:[\]]/g, "").substring(0, 30);
+      XLSX.utils.book_append_sheet(wb, cursoSheet, safeName);
+    }
+  });
+
+  const anio = currentSchoolProfile ? currentSchoolProfile.academicYear : '2026';
+  XLSX.writeFile(wb, `Matricula_Alumnos_${anio}.xlsx`);
+}
+
+function exportarAGoogleDriveModal() {
+  alert("☁️ Exportación a Google Drive:\nSe sincronizarán las planillas consolidadas con la carpeta compartida institucional.");
+}
+
+function ocultarYLimpiarFormulariosAlta() {
+  // Alumnos
+  const studentContainer = document.getElementById('studentFormContainer');
+  if (studentContainer) {
+    studentContainer.classList.add('hidden');
+    // Limpiar inputs del formulario de alumnos si contiene un form o elementos de texto
+    studentContainer.querySelectorAll('input:not([type="hidden"]), select, textarea').forEach(el => {
+      if (el.type === 'checkbox' || el.type === 'radio') el.checked = false;
+      else el.value = '';
+    });
+    const labelSala = document.getElementById('labelSalaCalculada');
+    if (labelSala) labelSala.textContent = "Seleccione fecha de nacimiento";
+  }
+
+  // Personal / Docentes
+  const staffContainer = document.getElementById('staffFormContainer');
+  if (staffContainer) {
+    staffContainer.classList.add('hidden');
+    staffContainer.querySelectorAll('input:not([type="hidden"]), select, textarea').forEach(el => {
+      if (el.type === 'checkbox' || el.type === 'radio') el.checked = false;
+      else el.value = '';
+    });
+    const assignmentsList = document.getElementById('altaAssignmentsListContainer');
+    if (assignmentsList) assignmentsList.innerHTML = '';
+  }
+
+  // Tutores
+  const tutorContainer = document.getElementById('tutorFormContainer');
+  if (tutorContainer) {
+    tutorContainer.classList.add('hidden');
+    tutorContainer.querySelectorAll('input:not([type="hidden"]), select, textarea').forEach(el => {
+      if (el.type === 'checkbox' || el.type === 'radio') el.checked = false;
+      else el.value = '';
+    });
+  }
+}
+// ========================================================
+// BUSCADOR EN VIVO Y ALTA RÁPIDA DE TUTORES (MATRICULACIÓN)
+// ========================================================
+
+function populateTutorSelects() {
+
+}
+
+function mostrarTodosLosTutores(hiddenInputId) {
+  filtrarTutoresInput(hiddenInputId, '');
+}
+
+function filtrarTutoresInput(hiddenInputId, query) {
+  const num = hiddenInputId.replace('studentTutor', '');
+  const dropdown = document.getElementById(`resultadosTutor${num}`);
+  if (!dropdown) return;
+
+  const textoNormalizado = normalizarTexto(query);
+
+  const filtrados = textToFilter => {
+    if (!textoNormalizado) return activeTutors;
+    return activeTutors.filter(t => {
+      const cadena = normalizarTexto(`${t.firstName} ${t.lastName} ${t.documentNumber}`);
+      return cadena.includes(textoNormalizado);
+    });
+  };
+
+  const lista = filtrados(textoNormalizado);
+  let htmlResultados = '';
+
+  if (lista.length > 0) {
+    htmlResultados = lista.map(t => `
+      <div onclick="seleccionarTutorDesplegado('${hiddenInputId}', '${t.id}', '${t.lastName}, ${t.firstName} (DNI: ${t.documentNumber || '-'})')" 
+           class="p-2.5 hover:bg-emerald-50 cursor-pointer font-medium text-slate-700 transition-colors border-b border-slate-50">
+        <strong>${t.lastName}, ${t.firstName}</strong> — DNI: ${t.documentNumber || '-'} (${t.relationship || 'Tutor'})
+      </div>
+    `).join('');
+  } else {
+    htmlResultados = `<div class="p-2.5 text-slate-400 text-center">No se encontraron tutores.</div>`;
+  }
+
+  htmlResultados += `
+    <div onclick="abrirModalRapidoTutor('${hiddenInputId}'); document.getElementById('resultadosTutor${num}').classList.add('hidden');" 
+         class="p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 cursor-pointer font-bold flex items-center gap-1.5 transition-colors">
+      <span class="material-icons-outlined text-sm">add_circle</span> Crear nuevo tutor ${query ? `"${query}"` : ''}
+    </div>
+  `;
+
+  dropdown.innerHTML = htmlResultados;
+  dropdown.classList.remove('hidden');
+}
+
+function seleccionarTutorDesplegado(hiddenInputId, tutorId, textoLegible) {
+  document.getElementById(hiddenInputId).value = tutorId;
+  const num = hiddenInputId.replace('studentTutor', '');
+  const buscadorEl = document.getElementById(`buscadorTutor${num}`);
+  if (buscadorEl) buscadorEl.value = textoLegible;
+
+  document.getElementById(`resultadosTutor${num}`)?.classList.add('hidden');
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.relative')) {
+    document.querySelectorAll('[id^="resultadosTutor"]').forEach(el => el.classList.add('hidden'));
+  }
+});
+
+
+async function guardarDatosEscuela(e) {
+  e.preventDefault();
+
+  const getVal = (id) => document.getElementById(id)?.value?.trim() || '';
+
+  const proposedData = {
+    ...currentSchoolProfile,
+    name: getVal('edit-school-name'),
+    legalName: getVal('edit-school-legalname'),
+    district: getVal('edit-school-district'),
+    sector: document.getElementById('edit-school-sector')?.value || 'Privado',
+    levels: document.getElementById('edit-school-levels')?.value || 'Inicial',
+    shifts: getVal('edit-school-shifts'),
+    city: getVal('edit-school-city'),
+    academicYear: parseInt(document.getElementById('edit-school-cycle')?.value) || 2026,
+    cue: getVal('edit-school-cue'),
+    dipregep: getVal('edit-school-dipregep'),
+    phone: getVal('edit-school-phone'),
+    email: getVal('edit-school-email'),
+    address: getVal('edit-school-address')
+  };
+
+  if (currentSession.role === 'ADMINISTRATIVE') {
+    const reason = getVal('edit-school-ticket-reason');
+    try {
+      const res = await apiFetch('/institution/profile/tickets', {
+        method: 'POST',
+        body: JSON.stringify({ reason, proposedData })
+      });
+      if (res.ok) {
+        alert("✅ Solicitud enviada exitosamente a Dirección.");
+        cerrarModalEdicionEscuela();
+      }
+    } catch (err) {
+      alert("Error al enviar ticket.");
+    }
+    return;
+  }
+
+  try {
+    const res = await apiFetch('/institution/profile', {
+      method: 'PUT',
+      body: JSON.stringify(proposedData)
+    });
+    if (res.ok) {
+      currentSchoolProfile = await res.json();
+      renderSchoolProfile();
+      cerrarModalEdicionEscuela();
+      alert("✅ Datos institucionales actualizados.");
+      await fetchSchoolProfile();
+    }
+  } catch (err) {
+    alert("Error al guardar cambios de la escuela.");
+  }
+}

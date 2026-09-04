@@ -1,7 +1,7 @@
 package com.educore.sge.kindergarten.web;
 
 import com.educore.sge.kindergarten.application.StudentTutorService;
-import com.educore.sge.kindergarten.application.TutorService; // 🟢 Inyección del servicio
+import com.educore.sge.kindergarten.application.TutorService;
 import com.educore.sge.kindergarten.infrastructure.dto.TutorDTO;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ResponseStatusException;
@@ -31,7 +31,7 @@ public class TutorController {
 
     private final TutorJpaRepository repository;
     private final StudentJpaRepository studentRepository;
-    private final TutorService tutorService; // 🟢 1. Declarar variable de instancia
+    private final TutorService tutorService;
 
     @Autowired
     private TutorHistoryRepository tutorHistoryRepository;
@@ -42,41 +42,49 @@ public class TutorController {
     @Autowired
     private StudentTutorService studentTutorService;
 
-    // 🟢 2. Inyectar TutorService en el constructor
     public TutorController(TutorJpaRepository repository, StudentJpaRepository studentRepository, TutorService tutorService) {
         this.repository = repository;
         this.studentRepository = studentRepository;
         this.tutorService = tutorService;
     }
 
-    // LISTAR TUTORES ACTIVOS
+    // LISTAR TUTORES ACTIVOS (Filtrado por Institución Activa)
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TEACHER')")
     @GetMapping
-    public List<TutorJpaEntity> getAllTutors() {
-        return repository.findAll();
+    public List<TutorJpaEntity> getAllTutors(
+            @RequestHeader("X-Institution-Id") String institutionId) {
+        return repository.findByTenantId(institutionId);
     }
 
-    // REGISTRAR NUEVO TUTOR
+    // REGISTRAR NUEVO TUTOR (Exigiendo el Tenant ID)
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TEACHER')")
     @PostMapping
     public TutorJpaEntity createTutor(
-            @RequestHeader(value = "X-Institution-Id", defaultValue = "88888888-4444-4444-4444-121212121212") String institutionId,
+            @RequestHeader("X-Institution-Id") String institutionId,
             @RequestBody TutorJpaEntity tutor) {
 
         tutor.setId(UUID.randomUUID().toString());
-        tutor.setTenantId(institutionId); // 🟢 Asigna el tenant_id requerido por MySQL
+        tutor.setTenantId(institutionId);
         return repository.save(tutor);
     }
 
-    // PROCESAR BAJA HISTÓRICA DEL TUTOR
+    // PROCESAR BAJA HISTÓRICA DEL TUTOR (Aislado por Tenant)
     @Transactional
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PostMapping("/{id}/baja")
-    public void darDeBajaTutor(@PathVariable String id) {
+    public void darDeBajaTutor(
+            @RequestHeader("X-Institution-Id") String institutionId,
+            @PathVariable String id) {
+
         TutorJpaEntity tutor = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tutor no encontrado"));
 
-        List<StudentJpaEntity> todosLosAlumnos = studentRepository.findAll();
+        if (!institutionId.equals(tutor.getTenantId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No tienes permiso sobre tutores de otra institución.");
+        }
+
+        // 🟢 Restringir la búsqueda únicamente a los alumnos del tenant activo
+        List<StudentJpaEntity> todosLosAlumnos = studentRepository.findByTenantId(institutionId);
         List<StudentJpaEntity> alumnosAEliminar = new ArrayList<>();
 
         for (StudentJpaEntity alumno : todosLosAlumnos) {
@@ -129,13 +137,13 @@ public class TutorController {
         repository.delete(tutor);
     }
 
-    // ACTUALIZAR DATOS DEL TUTOR (Ahora accesible también por el rol TUTOR)
+    // ACTUALIZAR DATOS DEL TUTOR
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TEACHER', 'TUTOR')")
     @PutMapping("/{id}")
     public ResponseEntity<TutorDTO> updateTutor(
             @PathVariable String id,
             @RequestBody TutorDTO tutorDto,
-            @RequestHeader(value = "X-Institution-Id", required = false) String institutionId) {
+            @RequestHeader("X-Institution-Id") String institutionId) {
 
         TutorDTO updated = tutorService.updateTutor(id, tutorDto);
         return ResponseEntity.ok(updated);

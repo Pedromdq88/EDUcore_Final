@@ -10,12 +10,37 @@ CREATE TABLE IF NOT EXISTS tenants (
                                        id VARCHAR(36) NOT NULL,
     name VARCHAR(150) NOT NULL,
     cue_code VARCHAR(50) NULL,
+    education_level VARCHAR(20) NOT NULL DEFAULT 'JARDIN',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (id)
+    PRIMARY KEY (id),
+    CONSTRAINT chk_tenants_education_level CHECK (education_level IN ('JARDIN', 'PRIMARIA', 'SECUNDARIA')),
+    INDEX idx_tenants_education_level (education_level)
     );
 
--- 2. TABLA ALUMNOS / ESTUDIANTES
+-- 2. TABLA PERFIL ESCOLAR Y GOBIERNO DE CICLO
+CREATE TABLE IF NOT EXISTS school_profiles (
+                                               tenant_id VARCHAR(36) NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    academic_year INT NOT NULL,
+    cutoff_date DATE NOT NULL,
+    cue VARCHAR(50) NULL,
+    sector VARCHAR(50) NULL,
+    levels VARCHAR(50) NULL,
+    legal_name VARCHAR(150) NULL,
+    district VARCHAR(100) NULL,
+    dipregep VARCHAR(50) NULL,
+    shifts VARCHAR(50) NULL,
+    address VARCHAR(150) NULL,
+    city VARCHAR(100) NULL,
+    phone VARCHAR(50) NULL,
+    email VARCHAR(150) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id),
+    CONSTRAINT fk_profile_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+    );
+
+-- 3. TABLA ALUMNOS / ESTUDIANTES
 CREATE TABLE IF NOT EXISTS students (
                                         id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -36,7 +61,6 @@ CREATE TABLE IF NOT EXISTS students (
     status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
     PRIMARY KEY (id),
     INDEX idx_students_tenant (tenant_id),
     INDEX idx_students_dni (document_number),
@@ -46,7 +70,7 @@ CREATE TABLE IF NOT EXISTS students (
     CONSTRAINT fk_students_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 3. TABLA TUTORES Y RESPONSABLES
+-- 4. TABLA TUTORES Y RESPONSABLES
 CREATE TABLE IF NOT EXISTS tutors (
                                       id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -64,20 +88,18 @@ CREATE TABLE IF NOT EXISTS tutors (
     direccion VARCHAR(255) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
     PRIMARY KEY (id),
     INDEX idx_tutors_tenant (tenant_id),
     INDEX idx_tutors_dni (document_number),
     CONSTRAINT fk_tutors_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 4. TABLA RELACIÓN ALUMNO - TUTORES
+-- 5. TABLA RELACIÓN ALUMNO - TUTORES
 CREATE TABLE IF NOT EXISTS student_tutors (
                                               student_id VARCHAR(36) NOT NULL,
     tutor_id VARCHAR(36) NOT NULL,
     is_primary BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
     PRIMARY KEY (student_id, tutor_id),
     INDEX idx_st_student (student_id),
     INDEX idx_st_tutor (tutor_id),
@@ -85,7 +107,7 @@ CREATE TABLE IF NOT EXISTS student_tutors (
     CONSTRAINT fk_st_tutor FOREIGN KEY (tutor_id) REFERENCES tutors(id) ON DELETE CASCADE
     );
 
--- 5. TABLA STAFF (DOCENTES Y PERSONAL)
+-- 6. TABLA STAFF (DOCENTES Y PERSONAL)
 CREATE TABLE IF NOT EXISTS institution_staff (
                                                  id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -100,7 +122,6 @@ CREATE TABLE IF NOT EXISTS institution_staff (
     status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
     PRIMARY KEY (id),
     UNIQUE INDEX unq_staff_email_tenant (email, tenant_id),
     INDEX idx_staff_tenant (tenant_id),
@@ -108,7 +129,7 @@ CREATE TABLE IF NOT EXISTS institution_staff (
     CONSTRAINT fk_staff_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- TABLA ASIGNACIONES DOCENTE
+-- 7. TABLA ASIGNACIONES DOCENTE
 CREATE TABLE IF NOT EXISTS staff_assignments (
                                                  id VARCHAR(36) NOT NULL,
     staff_id VARCHAR(36) NOT NULL,
@@ -118,7 +139,6 @@ CREATE TABLE IF NOT EXISTS staff_assignments (
     shift VARCHAR(50) NOT NULL DEFAULT 'MANANA',
     is_classroom_teacher BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
     PRIMARY KEY (id),
     INDEX idx_asg_staff (staff_id),
     INDEX idx_asg_classroom (classroom),
@@ -126,7 +146,8 @@ CREATE TABLE IF NOT EXISTS staff_assignments (
     CONSTRAINT fk_asg_staff FOREIGN KEY (staff_id) REFERENCES institution_staff(id) ON DELETE CASCADE,
     CONSTRAINT fk_asg_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
--- 7. TABLA DE COMUNICADOS INSTITUCIONALES
+
+-- 8. TABLA DE COMUNICADOS INSTITUCIONALES
 CREATE TABLE IF NOT EXISTS institution_announcements (
                                                          id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -143,7 +164,6 @@ CREATE TABLE IF NOT EXISTS institution_announcements (
     is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
     PRIMARY KEY (id),
     INDEX idx_announcement_tenant (tenant_id),
     INDEX idx_announcement_scope (scope, target_classroom),
@@ -152,7 +172,7 @@ CREATE TABLE IF NOT EXISTS institution_announcements (
     CONSTRAINT fk_announcement_student FOREIGN KEY (target_student_id) REFERENCES students(id) ON DELETE CASCADE
     );
 
--- 8. TABLA PERSONAS AUTORIZADAS PARA RETIRO
+-- 9. TABLA PERSONAS AUTORIZADAS PARA RETIRO
 CREATE TABLE IF NOT EXISTS student_authorized_pickups (
                                                           id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -165,7 +185,6 @@ CREATE TABLE IF NOT EXISTS student_authorized_pickups (
     phone VARCHAR(50) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
     PRIMARY KEY (id),
     INDEX idx_pickup_student (student_id),
     INDEX idx_pickup_tenant (tenant_id),
@@ -173,7 +192,7 @@ CREATE TABLE IF NOT EXISTS student_authorized_pickups (
     CONSTRAINT fk_pickup_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 9. TABLA RESTRICCIONES JUDICIALES CERTIFICADAS
+-- 10. TABLA RESTRICCIONES JUDICIALES CERTIFICADAS
 CREATE TABLE IF NOT EXISTS student_judicial_restrictions (
                                                              id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -189,7 +208,6 @@ CREATE TABLE IF NOT EXISTS student_judicial_restrictions (
     inscription_date DATE NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
     PRIMARY KEY (id),
     INDEX idx_restr_student (student_id),
     INDEX idx_restr_tenant (tenant_id),
@@ -197,7 +215,7 @@ CREATE TABLE IF NOT EXISTS student_judicial_restrictions (
     CONSTRAINT fk_restr_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 10. TABLA CUOTAS Y ARANCELES ESCOLARES
+-- 11. TABLA CUOTAS Y ARANCELES ESCOLARES
 CREATE TABLE IF NOT EXISTS student_fees (
                                             id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -209,7 +227,6 @@ CREATE TABLE IF NOT EXISTS student_fees (
     paid_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
     PRIMARY KEY (id),
     UNIQUE INDEX unq_student_fee (student_id, academic_year, month_number),
     INDEX idx_fees_tenant (tenant_id),
@@ -217,9 +234,10 @@ CREATE TABLE IF NOT EXISTS student_fees (
     CONSTRAINT fk_fees_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 11. TABLA HISTÓRICO DE ALUMNOS DADOS DE BAJA
+-- 12. TABLA HISTÓRICO DE BAJAS
 CREATE TABLE IF NOT EXISTS student_history (
-                                               id VARCHAR(36) NOT NULL,
+    id VARCHAR(36) NOT NULL,
+    tenant_id VARCHAR(36) NOT NULL,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     document_number VARCHAR(50) NOT NULL,
@@ -229,7 +247,9 @@ CREATE TABLE IF NOT EXISTS student_history (
     address VARCHAR(255) NULL,
     baja_date DATE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id)
+    PRIMARY KEY (id),
+    INDEX idx_student_history_tenant (tenant_id),
+    CONSTRAINT fk_student_history_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
 CREATE TABLE IF NOT EXISTS staff_history (
@@ -246,7 +266,7 @@ CREATE TABLE IF NOT EXISTS staff_history (
     INDEX idx_staff_history_tenant (tenant_id)
     );
 
--- 12. TABLA PORTFOLIOS PEDAGÓGICOS DOCENTES
+-- 13. TABLA PORTFOLIOS DOCENTES
 CREATE TABLE IF NOT EXISTS teacher_portfolios (
                                                   id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -258,7 +278,6 @@ CREATE TABLE IF NOT EXISTS teacher_portfolios (
     activity_date DATE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
     PRIMARY KEY (id),
     INDEX idx_portfolio_staff (staff_id),
     INDEX idx_portfolio_tenant (tenant_id),
@@ -266,19 +285,72 @@ CREATE TABLE IF NOT EXISTS teacher_portfolios (
     CONSTRAINT fk_portf_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- TABLA CATÁLOGO DE MATERIAS (Gestionada desde el sistema)
+-- 14. TABLA CATÁLOGO DE ASIGNATURAS
 CREATE TABLE IF NOT EXISTS academic_subjects (
                                                  id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
     name VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
     PRIMARY KEY (id),
     UNIQUE INDEX unq_subject_name_tenant (tenant_id, name),
     CONSTRAINT fk_subject_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
--- INSERCIÓN DEL TENANT INICIAL
-INSERT INTO tenants (id, name, cue_code)
-VALUES ('88888888-4444-4444-4444-121212121212', 'Jardín Once Unidos', '0600123-4')
-    ON DUPLICATE KEY UPDATE name = 'Jardín Once Unidos';
+
+-- 15. TABLA TICKETS DE SOLICITUD DE CAMBIO (ADMINISTRACIÓN -> DIRECCIÓN)
+CREATE TABLE IF NOT EXISTS school_change_tickets (
+                                                     id VARCHAR(36) NOT NULL,
+    tenant_id VARCHAR(36) NOT NULL,
+    requested_by_email VARCHAR(150) NOT NULL,
+    reason TEXT NOT NULL,
+    proposed_data_json TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP NULL,
+    PRIMARY KEY (id),
+    INDEX idx_ticket_tenant (tenant_id),
+    CONSTRAINT fk_ticket_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+    );
+
+
+-- 16. TABLA CONFIGURACIÓN DE CORREOS PARA CUOTAS (POR TENANT)
+CREATE TABLE IF NOT EXISTS institution_email_settings (
+                                                          tenant_id VARCHAR(36) NOT NULL,
+    receipt_email VARCHAR(150) NULL,
+    fee_query_email VARCHAR(150) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id),
+    CONSTRAINT fk_email_settings_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+    );
+
+-- ===================================================================================
+-- SEED DATA: INSTITUCIONES INICIALES DE EJEMPLO
+-- ===================================================================================
+
+-- 1. Jardín Once Unidos (Nivel Inicial)
+INSERT INTO tenants (id, name, cue_code, education_level)
+VALUES ('88888888-4444-4444-4444-121212121212', 'Jardín Once Unidos', '0600123-4', 'JARDIN')
+    ON DUPLICATE KEY UPDATE name = VALUES(name), education_level = VALUES(education_level);
+
+INSERT INTO school_profiles (tenant_id, name, academic_year, cutoff_date, cue, sector, levels, district, city)
+VALUES ('88888888-4444-4444-4444-121212121212', 'Jardín Once Unidos', 2026, '2026-06-30', '0600123-4', 'Privado', 'Inicial', 'General Pueyrredón', 'Mar del Plata')
+    ON DUPLICATE KEY UPDATE academic_year = VALUES(academic_year);
+
+-- 2. Primaria de prueba
+INSERT INTO tenants (id, name, cue_code, education_level)
+VALUES ('11111111-2222-3333-4444-555555555555', 'Colegio San Martín - Primaria', '0600456-1', 'PRIMARIA')
+    ON DUPLICATE KEY UPDATE name = VALUES(name), education_level = VALUES(education_level);
+
+INSERT INTO school_profiles (tenant_id, name, academic_year, cutoff_date, cue, sector, levels, district, city)
+VALUES ('11111111-2222-3333-4444-555555555555', 'Colegio San Martín - Primaria', 2026, '2026-06-30', '0600456-1', 'Privado', 'Primario', 'General Pueyrredón', 'Mar del Plata')
+    ON DUPLICATE KEY UPDATE academic_year = VALUES(academic_year);
+
+-- 3. Secundaria de prueba
+INSERT INTO tenants (id, name, cue_code, education_level)
+VALUES ('22222222-3333-4444-5555-666666666666', 'Instituto Sarmiento - Secundaria', '0600789-2', 'SECUNDARIA')
+    ON DUPLICATE KEY UPDATE name = VALUES(name), education_level = VALUES(education_level);
+
+INSERT INTO school_profiles (tenant_id, name, academic_year, cutoff_date, cue, sector, levels, district, city)
+VALUES ('22222222-3333-4444-5555-666666666666', 'Instituto Sarmiento - Secundaria', 2026, '2026-06-30', '0600789-2', 'Privado', 'Secundario', 'General Pueyrredón', 'Mar del Plata')
+    ON DUPLICATE KEY UPDATE academic_year = VALUES(academic_year);

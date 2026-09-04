@@ -1,50 +1,48 @@
 package com.educore.sge.institution.infrastructure.entity;
 
-import com.educore.sge.shared.BaseInstitutionEntity;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@EqualsAndHashCode(callSuper = true)
 @Entity
 @Table(name = "teacher_portfolios")
-public class PortfolioJpaEntity extends BaseInstitutionEntity {
+public class PortfolioJpaEntity {
 
     @Id
-    @Column(name = "id", updatable = false, nullable = false, length = 36)
+    @Column(name = "id", length = 36, nullable = false)
     private String id;
 
-    @Column(name = "staff_id", nullable = false, length = 36)
+    @Column(name = "tenant_id", length = 36, nullable = false)
+    private String tenantId;
+
+    @Column(name = "staff_id", length = 36, nullable = false)
     private String staffId;
 
-    @Column(name = "assignment_id", length = 36)
-    private String assignmentId;
-
-    @Column(name = "classroom", nullable = false, length = 100)
-    private String classroom;
-
-    @Column(name = "student_id", length = 36)
-    private String studentId;
-
-    @Column(name = "title", nullable = false, length = 200)
+    @Column(nullable = false, length = 200)
     private String title;
 
-    @Column(name = "description", nullable = false, columnDefinition = "TEXT")
-    private String description;
+    @Column(nullable = false, length = 50)
+    private String category;
 
-    @Column(name = "category", nullable = false, length = 50)
-    private String category = "PROYECTO";
+    @Column(columnDefinition = "TEXT", nullable = false)
+    private String description;
 
     @Column(name = "media_url", length = 500)
     private String mediaUrl;
 
     @Column(name = "activity_date", nullable = false)
     private LocalDate activityDate;
+
+    @Column(name = "created_at", insertable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", insertable = false, updatable = false)
+    private LocalDateTime updatedAt;
 }

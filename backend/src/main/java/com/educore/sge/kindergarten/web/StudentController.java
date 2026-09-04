@@ -1,6 +1,6 @@
 package com.educore.sge.kindergarten.web;
 
-import com.educore.sge.kindergarten.application.ClassroomAssignmentService; // 🟢 1. Import obligatorio
+import com.educore.sge.kindergarten.application.ClassroomAssignmentService;
 import com.educore.sge.kindergarten.application.StudentTutorService;
 import com.educore.sge.kindergarten.application.dto.TutorAssignmentRequest;
 import com.educore.sge.kindergarten.infrastructure.entity.StudentJpaEntity;
@@ -24,9 +24,8 @@ public class StudentController {
     private final StudentJpaRepository repository;
     private final StudentTutorService studentTutorService;
     private final StudentHistoryRepository studentHistoryRepository;
-    private final ClassroomAssignmentService classroomAssignmentService; // 🟢 2. Declaración del atributo
+    private final ClassroomAssignmentService classroomAssignmentService;
 
-    // 🟢 3. Inyección en el constructor
     public StudentController(
             StudentJpaRepository repository,
             StudentTutorService studentTutorService,
@@ -40,8 +39,9 @@ public class StudentController {
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
     @GetMapping
-    public List<StudentJpaEntity> getAllStudents() {
-        return repository.findAll();
+    public List<StudentJpaEntity> getAllStudents(
+            @RequestHeader("X-Institution-Id") String institutionId) {
+        return repository.findByTenantId(institutionId);
     }
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
@@ -57,11 +57,10 @@ public class StudentController {
         return student;
     }
 
-    // POST: Alta de alumno con cálculo automático de salita y tenant
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
     @PostMapping
     public StudentJpaEntity createStudent(
-            @RequestHeader(value = "X-Institution-Id", defaultValue = "88888888-4444-4444-4444-121212121212") String institutionId,
+            @RequestHeader("X-Institution-Id") String institutionId,
             @RequestBody StudentJpaEntity student) {
 
         student.setId(UUID.randomUUID().toString());
@@ -80,14 +79,12 @@ public class StudentController {
         return repository.save(student);
     }
 
-    // POST: Vincular tutores
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
     @PostMapping("/{studentId}/tutors")
     public void linkTutors(@PathVariable String studentId, @RequestBody List<TutorAssignmentRequest> requests) {
         studentTutorService.assignTutorsToStudent(studentId, requests);
     }
 
-    // POST: Dar de baja alumno
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PostMapping("/{id}/baja")
     public void darDeBajaAlumno(@PathVariable String id) {
@@ -110,11 +107,10 @@ public class StudentController {
         repository.delete(alumno);
     }
 
-    // PUT: Edición de alumno con recálculo automático de salita
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TUTOR')")
     @PutMapping("/{id}")
     public StudentJpaEntity updateStudent(
-            @RequestHeader(value = "X-Institution-Id", defaultValue = "88888888-4444-4444-4444-121212121212") String institutionId,
+            @RequestHeader("X-Institution-Id") String institutionId,
             @PathVariable String id,
             @RequestBody StudentJpaEntity updatedStudent) {
 
@@ -147,4 +143,4 @@ public class StudentController {
 
         return repository.save(existing);
     }
-}
+    }

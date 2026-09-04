@@ -27,23 +27,18 @@ public class PortfolioController {
     @GetMapping
     public List<PortfolioJpaEntity> getPortfolios(
             @RequestHeader("X-Institution-Id") String institutionId,
-            @RequestParam(required = false) String staffId,
-            @RequestParam(required = false) String classroom,
-            @RequestParam(required = false) String studentId) {
+            @RequestParam(required = false) String staffId) {
+
+        if (institutionId == null || institutionId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Falta cabecera X-Institution-Id");
+        }
 
         if (staffId != null && !staffId.isBlank()) {
             return portfolioRepository.findAllByTenantIdAndStaffIdOrderByActivityDateDesc(institutionId, staffId);
         }
-        if (studentId != null && !studentId.isBlank()) {
-            return portfolioRepository.findAllByTenantIdAndStudentIdOrderByActivityDateDesc(institutionId, studentId);
-        }
-        if (classroom != null && !classroom.isBlank() && !classroom.equalsIgnoreCase("TODAS")) {
-            return portfolioRepository.findAllByTenantIdAndClassroomOrderByActivityDateDesc(institutionId, classroom);
-        }
         return portfolioRepository.findAllByTenantIdOrderByActivityDateDesc(institutionId);
     }
 
-    // Crear nueva evidencia / entrada de portfolio
     @Transactional
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
     @PostMapping
@@ -53,6 +48,10 @@ public class PortfolioController {
 
         if (institutionId == null || institutionId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Falta cabecera X-Institution-Id");
+        }
+
+        if (portfolio.getStaffId() == null || portfolio.getStaffId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El ID del docente (staffId) es obligatorio");
         }
 
         if (portfolio.getId() == null || portfolio.getId().isBlank()) {
@@ -70,7 +69,6 @@ public class PortfolioController {
         return portfolioRepository.save(portfolio);
     }
 
-    // Editar entrada de portfolio
     @Transactional
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
     @PutMapping("/{id}")
@@ -83,15 +81,12 @@ public class PortfolioController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Portfolio no encontrado"));
 
         if (!institutionId.equals(existing.getTenantId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No tienes permiso sobre registros de otra institución.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta institución.");
         }
 
         existing.setTitle(updated.getTitle());
         existing.setDescription(updated.getDescription());
         existing.setCategory(updated.getCategory());
-        existing.setClassroom(updated.getClassroom());
-        existing.setStudentId(updated.getStudentId());
-        existing.setAssignmentId(updated.getAssignmentId());
         existing.setMediaUrl(updated.getMediaUrl());
         if (updated.getActivityDate() != null) {
             existing.setActivityDate(updated.getActivityDate());
@@ -100,7 +95,6 @@ public class PortfolioController {
         return portfolioRepository.save(existing);
     }
 
-    // Eliminar entrada de portfolio
     @Transactional
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TEACHER')")
     @DeleteMapping("/{id}")
@@ -112,7 +106,7 @@ public class PortfolioController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Portfolio no encontrado"));
 
         if (!institutionId.equals(existing.getTenantId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No tienes permiso para eliminar registros de otra institución.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No perteneces a esta institución.");
         }
 
         portfolioRepository.delete(existing);

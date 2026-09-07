@@ -16,9 +16,13 @@ import java.time.LocalDateTime;
 public class JudicialRestrictionJpaEntity {
 
     @Id
+    @Column(name = "id", length = 36, nullable = false)
     private String id;
 
-    @Column(name = "student_id", nullable = false)
+    @Column(name = "tenant_id", length = 36, nullable = false)
+    private String tenantId;
+
+    @Column(name = "student_id", length = 36, nullable = false)
     private String studentId;
 
     @Column(name = "last_name", nullable = false)

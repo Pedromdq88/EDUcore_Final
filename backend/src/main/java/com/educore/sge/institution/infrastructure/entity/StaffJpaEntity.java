@@ -2,6 +2,7 @@ package com.educore.sge.institution.infrastructure.entity;
 
 import com.educore.sge.shared.BaseInstitutionEntity;
 import com.educore.sge.shared.Rol;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -9,6 +10,8 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -52,4 +55,21 @@ public class StaffJpaEntity extends BaseInstitutionEntity {
 
     @Column(name = "status", nullable = false, length = 50)
     private String status = "ACTIVE";
+
+    @OneToMany(mappedBy = "staff", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @com.fasterxml.jackson.annotation.JsonManagedReference
+    private List<StaffAssignmentJpaEntity> assignments = new ArrayList<>();
+
+    public List<StaffAssignmentJpaEntity> getAssignments() {
+        if (this.assignments == null) {
+            this.assignments = new ArrayList<>();
+        }
+        return this.assignments;
+    }
+
+    public void setAssignments(List<StaffAssignmentJpaEntity> assignments) {
+        this.assignments = assignments;
+    }
+
+
 }

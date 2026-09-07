@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface JudicialRestrictionJpaRepository extends JpaRepository<JudicialRestrictionJpaEntity, String> {
     List<JudicialRestrictionJpaEntity> findByStudentId(String studentId);
+    List<JudicialRestrictionJpaEntity> findAllByTenantIdAndStudentId(String tenantId, String studentId);
 }

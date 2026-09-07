@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface AuthorizedPickupJpaRepository extends JpaRepository<AuthorizedPickupJpaEntity, String> {
     List<AuthorizedPickupJpaEntity> findByStudentId(String studentId);
+    List<AuthorizedPickupJpaEntity> findAllByTenantIdAndStudentId(String tenantId, String studentId);
 }

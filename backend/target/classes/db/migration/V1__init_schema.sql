@@ -41,34 +41,81 @@ CREATE TABLE IF NOT EXISTS school_profiles (
     );
 
 -- 3. TABLA ALUMNOS / ESTUDIANTES
-CREATE TABLE IF NOT EXISTS students (
-                                        id VARCHAR(36) NOT NULL,
-    tenant_id VARCHAR(36) NOT NULL,
-    legajo_number VARCHAR(50) NULL,
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
-    document_number VARCHAR(50) NOT NULL,
-    birth_date DATE NOT NULL,
-    academic_year INT NOT NULL,
-    classroom VARCHAR(100) NULL,
-    gender VARCHAR(20) NULL,
-    blood_type VARCHAR(10) NULL,
-    health_insurance VARCHAR(150) NULL,
-    allergies TEXT NULL,
-    birth_place VARCHAR(150) NULL,
-    address VARCHAR(255) NULL,
-    contact_phone VARCHAR(50) NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    INDEX idx_students_tenant (tenant_id),
-    INDEX idx_students_dni (document_number),
-    INDEX idx_students_legajo (legajo_number),
-    INDEX idx_students_year (academic_year),
-    INDEX idx_students_classroom (classroom),
-    CONSTRAINT fk_students_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
-    );
+CREATE TABLE students (
+    -- Identificación principal y multi-tenant
+                          id VARCHAR(36) PRIMARY KEY,
+                          tenant_id VARCHAR(36) NOT NULL,
+
+    -- Datos básicos del estudiante
+                          first_name VARCHAR(100) NOT NULL,
+                          last_name VARCHAR(100) NOT NULL,
+                          document_number VARCHAR(30) NOT NULL,
+                          legajo_number VARCHAR(50),
+                          birth_date DATE NOT NULL,
+                          academic_year INT NOT NULL,
+                          classroom VARCHAR(100),
+                          status VARCHAR(20) DEFAULT 'ACTIVE',
+
+    -- ========================================================
+    -- 1. IDENTIDAD Y DOCUMENTACIÓN LEGAL
+    -- ========================================================
+                          dni_status VARCHAR(20),                -- 'FISICO', 'EN_TRAMITE', 'NO_POSEE'
+                          cuil VARCHAR(15),
+                          has_cpi BOOLEAN,                       -- Certificado de Pre-Identificación
+                          has_foreign_document BOOLEAN,          -- Documento extranjero
+                          foreign_document_type VARCHAR(50),     -- Tipo (Pasaporte, Cédula, etc.)
+                          foreign_document_number VARCHAR(50),   -- N° de documento extranjero
+                          gender_identity VARCHAR(30),           -- 'MUJER', 'VARON', 'NO_BINARIO', etc.
+
+    -- ========================================================
+    -- 2. ORIGEN Y NACIMIENTO
+    -- ========================================================
+                          birth_country VARCHAR(20),             -- 'ARGENTINA', 'EXTRANJERO'
+                          nationality VARCHAR(100),
+                          birth_province VARCHAR(100),
+                          birth_district VARCHAR(100),
+                          birth_locality VARCHAR(100),
+
+    -- ========================================================
+    -- 3. DOMICILIO ESTRUCTURADO Y CONTACTO
+    -- ========================================================
+                          address_street VARCHAR(255),           -- Calle
+                          address_number VARCHAR(20),            -- N°
+                          address_floor VARCHAR(10),             -- Piso
+                          address_tower VARCHAR(20),             -- Torre
+                          address_apartment VARCHAR(10),         -- Depto
+                          address_between_streets VARCHAR(255),  -- Entre calle y calle
+                          address_other_details VARCHAR(255),    -- Otro dato / Referencia
+                          address_district VARCHAR(100),         -- Distrito
+                          address_locality VARCHAR(100),         -- Localidad
+
+                          student_landline_phone VARCHAR(30),    -- Teléfono fijo (cód. área)
+                          student_cellphone VARCHAR(30),         -- Teléfono celular (cód. área)
+
+    -- ========================================================
+    -- 4. OTROS DATOS (SOCIODEMOGRÁFICOS Y ESCOLARES)
+    -- ========================================================
+                          has_siblings BOOLEAN,                  -- ¿Tiene hermanas o hermanos?
+                          sibling_count INT,                     -- Cantidad total de hermanos
+                          siblings_in_this_school INT,           -- Cantidad que asiste a este establecimiento
+
+                          speaks_other_language_at_home BOOLEAN, -- ¿Hablan lenguas distintas al castellano?
+                          indigenous_language BOOLEAN,           -- Lengua indígena
+                          other_language BOOLEAN,                -- Otra lengua
+
+                          belongs_to_native_people BOOLEAN,      -- ¿Pertenece a Pueblos Originarios?
+                          receives_auh BOOLEAN,                  -- Asignación Universal por Hijo (AUH)
+                          transportation_methods VARCHAR(255),   -- Medio de transporte (ej: 'COLECTIVO,BICICLETA')
+
+    -- Auditoría básica recomendada
+                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Índices recomendados para búsquedas rápidas por tenant y DNI
+CREATE INDEX idx_students_tenant ON students(tenant_id);
+CREATE INDEX idx_students_document ON students(document_number);
+CREATE INDEX idx_students_classroom ON students(classroom);
 
 -- 4. TABLA TUTORES Y RESPONSABLES
 CREATE TABLE IF NOT EXISTS tutors (
@@ -324,6 +371,82 @@ CREATE TABLE IF NOT EXISTS institution_email_settings (
     CONSTRAINT fk_email_settings_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
+
+-- Tabla Ficha Medica
+CREATE TABLE IF NOT EXISTS student_medical_records (
+    id VARCHAR(36) PRIMARY KEY,
+    student_id VARCHAR(36) NOT NULL,
+    tenant_id VARCHAR(36) NOT NULL,
+
+    -- Información de Salud / Cobertura
+    obra_social VARCHAR(10) DEFAULT 'NO',
+    detalle_obra_social VARCHAR(255),
+    nro_afiliado VARCHAR(100),
+
+    -- Antecedentes Personales de Salud
+    asma BOOLEAN DEFAULT FALSE,
+    alergia_general BOOLEAN DEFAULT FALSE,
+    problemas_cardiacos BOOLEAN DEFAULT FALSE,
+    diabetes BOOLEAN DEFAULT FALSE,
+    presion_arterial_elevada BOOLEAN DEFAULT FALSE,
+    convulsiones BOOLEAN DEFAULT FALSE,
+    alteraciones_sanguineas BOOLEAN DEFAULT FALSE,
+    quemaduras_severas BOOLEAN DEFAULT FALSE,
+    falta_organo BOOLEAN DEFAULT FALSE,
+    enfermedad_oncohematologica BOOLEAN DEFAULT FALSE,
+    inmunodeficiencias BOOLEAN DEFAULT FALSE,
+    fracturas_lesiones BOOLEAN DEFAULT FALSE,
+    otro_problema_huesos BOOLEAN DEFAULT FALSE,
+    traumatismo_craneo BOOLEAN DEFAULT FALSE,
+    problemas_piel BOOLEAN DEFAULT FALSE,
+
+    -- Ejercicio y Actividad Física
+    desmayos BOOLEAN DEFAULT FALSE,
+    dolor_pecho BOOLEAN DEFAULT FALSE,
+    mareos BOOLEAN DEFAULT FALSE,
+    mayor_cansancio BOOLEAN DEFAULT FALSE,
+    palpitaciones BOOLEAN DEFAULT FALSE,
+    dificultad_respirar BOOLEAN DEFAULT FALSE,
+
+    -- Internaciones y Operaciones
+    internacion_sala_comun BOOLEAN DEFAULT FALSE,
+    internacion_terapia BOOLEAN DEFAULT FALSE,
+    detalle_internacion TEXT,
+    operacion BOOLEAN DEFAULT FALSE,
+    motivo_operacion TEXT,
+    anio_operacion VARCHAR(10),
+
+    -- Alergias Graves Detalladas
+    alergia_medicamentos BOOLEAN DEFAULT FALSE,
+    internacion_med BOOLEAN DEFAULT FALSE,
+    alergia_vacunas BOOLEAN DEFAULT FALSE,
+    internacion_vac BOOLEAN DEFAULT FALSE,
+    alergia_alimentos BOOLEAN DEFAULT FALSE,
+    internacion_alim BOOLEAN DEFAULT FALSE,
+    alergia_insectos BOOLEAN DEFAULT FALSE,
+    internacion_ins BOOLEAN DEFAULT FALSE,
+    alergia_estacionales BOOLEAN DEFAULT FALSE,
+    internacion_est BOOLEAN DEFAULT FALSE,
+    alergia_otras BOOLEAN DEFAULT FALSE,
+    internacion_otr BOOLEAN DEFAULT FALSE,
+
+    -- Discapacidades y Tratamientos
+    disminucion_auditiva BOOLEAN DEFAULT FALSE,
+    usa_audifonos BOOLEAN DEFAULT FALSE,
+    disminucion_visual BOOLEAN DEFAULT FALSE,
+    usa_lentes BOOLEAN DEFAULT FALSE,
+    medicacion_habitual BOOLEAN DEFAULT FALSE,
+    cual_medicacion TEXT,
+
+    -- Antecedentes Familiares de Salud
+    muerte_subita_familiar BOOLEAN DEFAULT FALSE,
+    diabetes_familiar BOOLEAN DEFAULT FALSE,
+    problemas_cardiacos_familiar BOOLEAN DEFAULT FALSE,
+    tos_cronica_familiar BOOLEAN DEFAULT FALSE,
+    celiaquia_familiar BOOLEAN DEFAULT FALSE,
+
+    CONSTRAINT fk_medical_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+    );
 -- ===================================================================================
 -- SEED DATA: INSTITUCIONES INICIALES DE EJEMPLO
 -- ===================================================================================

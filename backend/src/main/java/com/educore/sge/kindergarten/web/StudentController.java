@@ -107,7 +107,7 @@ public class StudentController {
         repository.delete(alumno);
     }
 
-    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TUTOR')")
+    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PutMapping("/{id}")
     public StudentJpaEntity updateStudent(
             @RequestHeader("X-Institution-Id") String institutionId,
@@ -117,6 +117,7 @@ public class StudentController {
         StudentJpaEntity existing = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado"));
 
+        // Datos básicos
         existing.setLegajoNumber(updatedStudent.getLegajoNumber());
         existing.setFirstName(updatedStudent.getFirstName());
         existing.setLastName(updatedStudent.getLastName());
@@ -127,12 +128,46 @@ public class StudentController {
             existing.setAcademicYear(updatedStudent.getAcademicYear());
         }
 
-        String salaRecalculada = classroomAssignmentService.calculateClassroom(
-                existing.getBirthDate(),
-                existing.getAcademicYear()
-        );
-        existing.setClassroom(salaRecalculada);
+        // 🟢 Aula manual o automática (respeta la edición manual)
+        if (updatedStudent.getClassroom() != null && !updatedStudent.getClassroom().isBlank()) {
+            existing.setClassroom(updatedStudent.getClassroom());
+        } else {
+            String salaRecalculada = classroomAssignmentService.calculateClassroom(
+                    existing.getBirthDate(),
+                    existing.getAcademicYear()
+            );
+            existing.setClassroom(salaRecalculada);
+        }
 
+        // 🟢 1. Identidad y Documentación Legal
+        existing.setCuil(updatedStudent.getCuil());
+        existing.setDniStatus(updatedStudent.getDniStatus());
+        existing.setGenderIdentity(updatedStudent.getGenderIdentity());
+
+        // 🟢 2. Origen y Nacimiento
+        existing.setBirthCountry(updatedStudent.getBirthCountry());
+        existing.setNationality(updatedStudent.getNationality());
+        existing.setBirthProvince(updatedStudent.getBirthProvince());
+        existing.setBirthLocality(updatedStudent.getBirthLocality());
+
+        // 🟢 3. Domicilio Estructurado
+        existing.setStreet(updatedStudent.getStreet());
+        existing.setStreetNumber(updatedStudent.getStreetNumber());
+        existing.setFloor(updatedStudent.getFloor());
+        existing.setTower(updatedStudent.getTower());
+        existing.setApartment(updatedStudent.getApartment());
+        existing.setBetweenStreets(updatedStudent.getBetweenStreets());
+        existing.setAddressLocality(updatedStudent.getAddressLocality());
+
+        // 🟢 4. Datos Sociodemográficos y Escolares
+        existing.setHasSiblings(updatedStudent.getHasSiblings());
+        existing.setSiblingCount(updatedStudent.getSiblingCount());
+        existing.setSiblingsInThisSchool(updatedStudent.getSiblingsInThisSchool());
+        existing.setReceivesAuh(updatedStudent.getReceivesAuh());
+        existing.setBelongsToNativePeople(updatedStudent.getBelongsToNativePeople());
+        existing.setTransportationMethods(updatedStudent.getTransportationMethods());
+
+        // Campos anteriores de contacto y salud
         existing.setGender(updatedStudent.getGender());
         existing.setBloodType(updatedStudent.getBloodType());
         existing.setHealthInsurance(updatedStudent.getHealthInsurance());

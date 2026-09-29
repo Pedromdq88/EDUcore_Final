@@ -1,5 +1,6 @@
 package com.educore.sge.kindergarten.infrastructure.entity;
 
+import com.educore.sge.institution.infrastructure.domain.ClassroomShift;
 import com.educore.sge.kindergarten.domain.BirthCountry;
 import com.educore.sge.kindergarten.domain.DniStatus;
 import com.educore.sge.kindergarten.domain.GenderIdentity;
@@ -65,6 +66,10 @@ public class StudentJpaEntity extends BaseInstitutionEntity {
 
     @Column(name = "academic_year", nullable = false)
     private Integer academicYear = LocalDate.now().getYear();
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "student_shift", length = 20)
+    private ClassroomShift studentShift;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)

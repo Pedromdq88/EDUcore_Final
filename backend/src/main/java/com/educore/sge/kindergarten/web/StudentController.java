@@ -70,9 +70,11 @@ public class StudentController {
             student.setAcademicYear(LocalDate.now().getYear());
         }
 
+        // 🟢 Se pasa institutionId para que el servicio busque las aulas configuradas de esta escuela
         String salaCalculada = classroomAssignmentService.calculateClassroom(
                 student.getBirthDate(),
-                student.getAcademicYear()
+                student.getAcademicYear(),
+                institutionId
         );
         student.setClassroom(salaCalculada);
 
@@ -128,29 +130,31 @@ public class StudentController {
             existing.setAcademicYear(updatedStudent.getAcademicYear());
         }
 
-        // 🟢 Aula manual o automática (respeta la edición manual)
+        // 🟢 Aula manual o automática
         if (updatedStudent.getClassroom() != null && !updatedStudent.getClassroom().isBlank()) {
             existing.setClassroom(updatedStudent.getClassroom());
         } else {
+            // 🟢 Se pasa institutionId (o existing.getTenantId()) para recalcular según las reglas del gestor
             String salaRecalculada = classroomAssignmentService.calculateClassroom(
                     existing.getBirthDate(),
-                    existing.getAcademicYear()
+                    existing.getAcademicYear(),
+                    institutionId
             );
             existing.setClassroom(salaRecalculada);
         }
 
-        // 🟢 1. Identidad y Documentación Legal
+        // 1. Identidad y Documentación Legal
         existing.setCuil(updatedStudent.getCuil());
         existing.setDniStatus(updatedStudent.getDniStatus());
         existing.setGenderIdentity(updatedStudent.getGenderIdentity());
 
-        // 🟢 2. Origen y Nacimiento
+        // 2. Origen y Nacimiento
         existing.setBirthCountry(updatedStudent.getBirthCountry());
         existing.setNationality(updatedStudent.getNationality());
         existing.setBirthProvince(updatedStudent.getBirthProvince());
         existing.setBirthLocality(updatedStudent.getBirthLocality());
 
-        // 🟢 3. Domicilio Estructurado
+        // 3. Domicilio Estructurado
         existing.setStreet(updatedStudent.getStreet());
         existing.setStreetNumber(updatedStudent.getStreetNumber());
         existing.setFloor(updatedStudent.getFloor());
@@ -159,7 +163,7 @@ public class StudentController {
         existing.setBetweenStreets(updatedStudent.getBetweenStreets());
         existing.setAddressLocality(updatedStudent.getAddressLocality());
 
-        // 🟢 4. Datos Sociodemográficos y Escolares
+        // 4. Datos Sociodemográficos y Escolares
         existing.setHasSiblings(updatedStudent.getHasSiblings());
         existing.setSiblingCount(updatedStudent.getSiblingCount());
         existing.setSiblingsInThisSchool(updatedStudent.getSiblingsInThisSchool());
@@ -175,7 +179,8 @@ public class StudentController {
         existing.setBirthPlace(updatedStudent.getBirthPlace());
         existing.setAddress(updatedStudent.getAddress());
         existing.setContactPhone(updatedStudent.getContactPhone());
+        existing.setStudentShift(updatedStudent.getStudentShift());
 
         return repository.save(existing);
     }
-    }
+}

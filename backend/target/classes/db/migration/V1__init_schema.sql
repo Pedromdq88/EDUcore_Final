@@ -40,37 +40,97 @@ CREATE TABLE IF NOT EXISTS school_profiles (
     CONSTRAINT fk_profile_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 3. TABLA ALUMNOS / ESTUDIANTES
-CREATE TABLE IF NOT EXISTS students (
-                                        id VARCHAR(36) NOT NULL,
+-- 3. TABLA CONFIGURACIÓN DE AULAS Y TURNOS (GESTOR DE AULAS)
+CREATE TABLE IF NOT EXISTS institution_classrooms_config (
+                                                             id VARCHAR(36) NOT NULL PRIMARY KEY,
     tenant_id VARCHAR(36) NOT NULL,
-    legajo_number VARCHAR(50) NULL,
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
-    document_number VARCHAR(50) NOT NULL,
-    birth_date DATE NOT NULL,
-    academic_year INT NOT NULL,
-    classroom VARCHAR(100) NULL,
-    gender VARCHAR(20) NULL,
-    blood_type VARCHAR(10) NULL,
-    health_insurance VARCHAR(150) NULL,
-    allergies TEXT NULL,
-    birth_place VARCHAR(150) NULL,
-    address VARCHAR(255) NULL,
-    contact_phone VARCHAR(50) NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+    name VARCHAR(255) NOT NULL,
+    minimum_age INT NOT NULL,
+    shift VARCHAR(20) NOT NULL, -- 'MANANA', 'TARDE', 'AMBOS'
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    INDEX idx_students_tenant (tenant_id),
-    INDEX idx_students_dni (document_number),
-    INDEX idx_students_legajo (legajo_number),
-    INDEX idx_students_year (academic_year),
-    INDEX idx_students_classroom (classroom),
-    CONSTRAINT fk_students_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+    INDEX idx_classrooms_config_tenant (tenant_id)
     );
 
--- 4. TABLA TUTORES Y RESPONSABLES
+-- 4. TABLA ALUMNOS
+CREATE TABLE students (
+    -- Identificación principal y multi-tenant
+                          id VARCHAR(36) PRIMARY KEY,
+                          tenant_id VARCHAR(36) NOT NULL,
+
+    -- Datos básicos del estudiante
+                          first_name VARCHAR(100) NOT NULL,
+                          last_name VARCHAR(100) NOT NULL,
+                          document_number VARCHAR(30) NOT NULL,
+                          legajo_number VARCHAR(50),
+                          birth_date DATE NOT NULL,
+                          academic_year INT NOT NULL,
+                          classroom VARCHAR(100),
+                          student_shift VARCHAR(20),             -- 🟢 Turno asignado al alumno ('MANANA', 'TARDE')
+                          status VARCHAR(20) DEFAULT 'ACTIVE',
+
+    -- ========================================================
+    -- 1. IDENTIDAD Y DOCUMENTACIÓN LEGAL
+    -- ========================================================
+                          dni_status VARCHAR(20),                -- 'FISICO', 'EN_TRAMITE', 'NO_POSEE'
+                          cuil VARCHAR(15),
+                          has_cpi BOOLEAN,                       -- Certificado de Pre-Identificación
+                          has_foreign_document BOOLEAN,          -- Documento extranjero
+                          foreign_document_type VARCHAR(50),     -- Tipo (Pasaporte, Cédula, etc.)
+                          foreign_document_number VARCHAR(50),   -- N° de documento extranjero
+                          gender_identity VARCHAR(30),           -- 'MUJER', 'VARON', 'NO_BINARIO', etc.
+
+    -- ========================================================
+    -- 2. ORIGEN Y NACIMIENTO
+    -- ========================================================
+                          birth_country VARCHAR(20),             -- 'ARGENTINA', 'EXTRANJERO'
+                          nationality VARCHAR(100),
+                          birth_province VARCHAR(100),
+                          birth_district VARCHAR(100),
+                          birth_locality VARCHAR(100),
+
+    -- ========================================================
+    -- 3. DOMICILIO ESTRUCTURADO Y CONTACTO
+    -- ========================================================
+                          address_street VARCHAR(255),           -- Calle
+                          address_number VARCHAR(20),            -- N°
+                          address_floor VARCHAR(10),             -- Piso
+                          address_tower VARCHAR(20),             -- Torre
+                          address_apartment VARCHAR(10),         -- Depto
+                          address_between_streets VARCHAR(255),  -- Entre calle y calle
+                          address_other_details VARCHAR(255),    -- Otro dato / Referencia
+                          address_district VARCHAR(100),         -- Distrito
+                          address_locality VARCHAR(100),         -- Localidad
+
+                          student_landline_phone VARCHAR(30),    -- Teléfono fijo (cód. área)
+                          student_cellphone VARCHAR(30),         -- Teléfono celular (cód. área)
+
+    -- ========================================================
+    -- 4. OTROS DATOS (SOCIODEMOGRÁFICOS Y ESCOLARES)
+    -- ========================================================
+                          has_siblings BOOLEAN,                  -- ¿Tiene hermanas o hermanos?
+                          sibling_count INT,                     -- Cantidad total de hermanos
+                          siblings_in_this_school INT,           -- Cantidad que asiste a este establecimiento
+
+                          speaks_other_language_at_home BOOLEAN, -- ¿Hablan lenguas distintas al castellano?
+                          indigenous_language BOOLEAN,           -- Lengua indígena
+                          other_language BOOLEAN,                -- Otra lengua
+
+                          belongs_to_native_people BOOLEAN,      -- ¿Pertenece a Pueblos Originarios?
+                          receives_auh BOOLEAN,                  -- Asignación Universal por Hijo (AUH)
+                          transportation_methods VARCHAR(255),   -- Medio de transporte (ej: 'COLECTIVO,BICICLETA')
+
+    -- Auditoría básica recomendada
+                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Índices recomendados para búsquedas rápidas por tenant y DNI
+CREATE INDEX idx_students_tenant ON students(tenant_id);
+CREATE INDEX idx_students_document ON students(document_number);
+CREATE INDEX idx_students_classroom ON students(classroom);
+
+-- 5. TABLA TUTORES Y RESPONSABLES
 CREATE TABLE IF NOT EXISTS tutors (
                                       id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -94,7 +154,7 @@ CREATE TABLE IF NOT EXISTS tutors (
     CONSTRAINT fk_tutors_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 5. TABLA RELACIÓN ALUMNO - TUTORES
+-- 6. TABLA RELACIÓN ALUMNO - TUTORES
 CREATE TABLE IF NOT EXISTS student_tutors (
                                               student_id VARCHAR(36) NOT NULL,
     tutor_id VARCHAR(36) NOT NULL,
@@ -107,7 +167,7 @@ CREATE TABLE IF NOT EXISTS student_tutors (
     CONSTRAINT fk_st_tutor FOREIGN KEY (tutor_id) REFERENCES tutors(id) ON DELETE CASCADE
     );
 
--- 6. TABLA STAFF (DOCENTES Y PERSONAL)
+-- 7. TABLA STAFF (DOCENTES Y PERSONAL)
 CREATE TABLE IF NOT EXISTS institution_staff (
                                                  id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -129,7 +189,7 @@ CREATE TABLE IF NOT EXISTS institution_staff (
     CONSTRAINT fk_staff_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 7. TABLA ASIGNACIONES DOCENTE
+-- 8. TABLA ASIGNACIONES DOCENTE
 CREATE TABLE IF NOT EXISTS staff_assignments (
                                                  id VARCHAR(36) NOT NULL,
     staff_id VARCHAR(36) NOT NULL,
@@ -147,7 +207,7 @@ CREATE TABLE IF NOT EXISTS staff_assignments (
     CONSTRAINT fk_asg_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 8. TABLA DE COMUNICADOS INSTITUCIONALES
+-- 9. TABLA DE COMUNICADOS INSTITUCIONALES
 CREATE TABLE IF NOT EXISTS institution_announcements (
                                                          id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -172,7 +232,7 @@ CREATE TABLE IF NOT EXISTS institution_announcements (
     CONSTRAINT fk_announcement_student FOREIGN KEY (target_student_id) REFERENCES students(id) ON DELETE CASCADE
     );
 
--- 9. TABLA PERSONAS AUTORIZADAS PARA RETIRO
+-- 10. TABLA PERSONAS AUTORIZADAS PARA RETIRO
 CREATE TABLE IF NOT EXISTS student_authorized_pickups (
                                                           id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -192,7 +252,7 @@ CREATE TABLE IF NOT EXISTS student_authorized_pickups (
     CONSTRAINT fk_pickup_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 10. TABLA RESTRICCIONES JUDICIALES CERTIFICADAS
+-- 11. TABLA RESTRICCIONES JUDICIALES CERTIFICADAS
 CREATE TABLE IF NOT EXISTS student_judicial_restrictions (
                                                              id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -215,7 +275,7 @@ CREATE TABLE IF NOT EXISTS student_judicial_restrictions (
     CONSTRAINT fk_restr_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 11. TABLA CUOTAS Y ARANCELES ESCOLARES
+-- 12. TABLA CUOTAS Y ARANCELES ESCOLARES
 CREATE TABLE IF NOT EXISTS student_fees (
                                             id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -234,9 +294,9 @@ CREATE TABLE IF NOT EXISTS student_fees (
     CONSTRAINT fk_fees_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 12. TABLA HISTÓRICO DE BAJAS
+-- 13. TABLA HISTÓRICO DE BAJAS
 CREATE TABLE IF NOT EXISTS student_history (
-    id VARCHAR(36) NOT NULL,
+                                               id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
@@ -266,7 +326,7 @@ CREATE TABLE IF NOT EXISTS staff_history (
     INDEX idx_staff_history_tenant (tenant_id)
     );
 
--- 13. TABLA PORTFOLIOS DOCENTES
+-- 14. TABLA PORTFOLIOS DOCENTES
 CREATE TABLE IF NOT EXISTS teacher_portfolios (
                                                   id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -285,7 +345,7 @@ CREATE TABLE IF NOT EXISTS teacher_portfolios (
     CONSTRAINT fk_portf_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 14. TABLA CATÁLOGO DE ASIGNATURAS
+-- 15. TABLA CATÁLOGO DE ASIGNATURAS
 CREATE TABLE IF NOT EXISTS academic_subjects (
                                                  id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -297,7 +357,7 @@ CREATE TABLE IF NOT EXISTS academic_subjects (
     CONSTRAINT fk_subject_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- 15. TABLA TICKETS DE SOLICITUD DE CAMBIO (ADMINISTRACIÓN -> DIRECCIÓN)
+-- 16. TABLA TICKETS DE SOLICITUD DE CAMBIO (ADMINISTRACIÓN -> DIRECCIÓN)
 CREATE TABLE IF NOT EXISTS school_change_tickets (
                                                      id VARCHAR(36) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
@@ -312,8 +372,7 @@ CREATE TABLE IF NOT EXISTS school_change_tickets (
     CONSTRAINT fk_ticket_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
-
--- 16. TABLA CONFIGURACIÓN DE CORREOS PARA CUOTAS (POR TENANT)
+-- 17. TABLA CONFIGURACIÓN DE CORREOS PARA CUOTAS (POR TENANT)
 CREATE TABLE IF NOT EXISTS institution_email_settings (
                                                           tenant_id VARCHAR(36) NOT NULL,
     receipt_email VARCHAR(150) NULL,
@@ -324,33 +383,106 @@ CREATE TABLE IF NOT EXISTS institution_email_settings (
     CONSTRAINT fk_email_settings_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
--- ===================================================================================
--- SEED DATA: INSTITUCIONES INICIALES DE EJEMPLO
--- ===================================================================================
+-- 18. TABLA FICHA MÉDICA
+CREATE TABLE IF NOT EXISTS student_medical_records (
+                                                       id VARCHAR(36) PRIMARY KEY,
+    student_id VARCHAR(36) NOT NULL,
+    tenant_id VARCHAR(36) NOT NULL,
 
--- 1. Jardín Once Unidos (Nivel Inicial)
+    -- Información de Salud / Cobertura
+    obra_social VARCHAR(10) DEFAULT 'NO',
+    detalle_obra_social VARCHAR(255),
+    nro_afiliado VARCHAR(100),
+
+    -- Antecedentes Personales de Salud
+    asma BOOLEAN DEFAULT FALSE,
+    alergia_general BOOLEAN DEFAULT FALSE,
+    problemas_cardiacos BOOLEAN DEFAULT FALSE,
+    diabetes BOOLEAN DEFAULT FALSE,
+    presion_arterial_elevada BOOLEAN DEFAULT FALSE,
+    convulsiones BOOLEAN DEFAULT FALSE,
+    alteraciones_sanguineas BOOLEAN DEFAULT FALSE,
+    quemaduras_severas BOOLEAN DEFAULT FALSE,
+    falta_organo BOOLEAN DEFAULT FALSE,
+    enfermedad_oncohematologica BOOLEAN DEFAULT FALSE,
+    inmunodeficiencias BOOLEAN DEFAULT FALSE,
+    fracturas_lesiones BOOLEAN DEFAULT FALSE,
+    otro_problema_huesos BOOLEAN DEFAULT FALSE,
+    traumatismo_craneo BOOLEAN DEFAULT FALSE,
+    problemas_piel BOOLEAN DEFAULT FALSE,
+
+    -- Ejercicio y Actividad Física
+    desmayos BOOLEAN DEFAULT FALSE,
+    dolor_pecho BOOLEAN DEFAULT FALSE,
+    mareos BOOLEAN DEFAULT FALSE,
+    mayor_cansancio BOOLEAN DEFAULT FALSE,
+    palpitaciones BOOLEAN DEFAULT FALSE,
+    dificultad_respirar BOOLEAN DEFAULT FALSE,
+
+    -- Internaciones y Operaciones
+    internacion_sala_comun BOOLEAN DEFAULT FALSE,
+    internacion_terapia BOOLEAN DEFAULT FALSE,
+    detalle_internacion TEXT,
+    operacion BOOLEAN DEFAULT FALSE,
+    motivo_operacion TEXT,
+    anio_operacion VARCHAR(10),
+
+    -- Alergias Graves Detalladas
+    alergia_medicamentos BOOLEAN DEFAULT FALSE,
+    internacion_med BOOLEAN DEFAULT FALSE,
+    alergia_vacunas BOOLEAN DEFAULT FALSE,
+    internacion_vac BOOLEAN DEFAULT FALSE,
+    alergia_alimentos BOOLEAN DEFAULT FALSE,
+    internacion_alim BOOLEAN DEFAULT FALSE,
+    alergia_insectos BOOLEAN DEFAULT FALSE,
+    internacion_ins BOOLEAN DEFAULT FALSE,
+    alergia_estacionales BOOLEAN DEFAULT FALSE,
+    internacion_est BOOLEAN DEFAULT FALSE,
+    alergia_otras BOOLEAN DEFAULT FALSE,
+    internacion_otr BOOLEAN DEFAULT FALSE,
+
+    -- Discapacidades y Tratamientos
+    disminucion_auditiva BOOLEAN DEFAULT FALSE,
+    usa_audifonos BOOLEAN DEFAULT FALSE,
+    disminucion_visual BOOLEAN DEFAULT FALSE,
+    usa_lentes BOOLEAN DEFAULT FALSE,
+    medicacion_habitual BOOLEAN DEFAULT FALSE,
+    cual_medicacion TEXT,
+
+    -- Antecedentes Familiares de Salud
+    muerte_subita_familiar BOOLEAN DEFAULT FALSE,
+    diabetes_familiar BOOLEAN DEFAULT FALSE,
+    problemas_cardiacos_familiar BOOLEAN DEFAULT FALSE,
+    tos_cronica_familiar BOOLEAN DEFAULT FALSE,
+    celiaquia_familiar BOOLEAN DEFAULT FALSE,
+
+    CONSTRAINT fk_medical_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+    );
+
+
+--INSERTAMOS UN JARDIN PARA USAR DE PRUEBA
+
 INSERT INTO tenants (id, name, cue_code, education_level)
 VALUES ('88888888-4444-4444-4444-121212121212', 'Jardín Once Unidos', '0600123-4', 'JARDIN')
     ON DUPLICATE KEY UPDATE name = VALUES(name), education_level = VALUES(education_level);
 
-INSERT INTO school_profiles (tenant_id, name, academic_year, cutoff_date, cue, sector, levels, district, city)
-VALUES ('88888888-4444-4444-4444-121212121212', 'Jardín Once Unidos', 2026, '2026-06-30', '0600123-4', 'Privado', 'Inicial', 'General Pueyrredón', 'Mar del Plata')
-    ON DUPLICATE KEY UPDATE academic_year = VALUES(academic_year);
-
--- 2. Primaria de prueba
-INSERT INTO tenants (id, name, cue_code, education_level)
-VALUES ('11111111-2222-3333-4444-555555555555', 'Colegio San Martín - Primaria', '0600456-1', 'PRIMARIA')
-    ON DUPLICATE KEY UPDATE name = VALUES(name), education_level = VALUES(education_level);
-
-INSERT INTO school_profiles (tenant_id, name, academic_year, cutoff_date, cue, sector, levels, district, city)
-VALUES ('11111111-2222-3333-4444-555555555555', 'Colegio San Martín - Primaria', 2026, '2026-06-30', '0600456-1', 'Privado', 'Primario', 'General Pueyrredón', 'Mar del Plata')
-    ON DUPLICATE KEY UPDATE academic_year = VALUES(academic_year);
-
--- 3. Secundaria de prueba
-INSERT INTO tenants (id, name, cue_code, education_level)
-VALUES ('22222222-3333-4444-5555-666666666666', 'Instituto Sarmiento - Secundaria', '0600789-2', 'SECUNDARIA')
-    ON DUPLICATE KEY UPDATE name = VALUES(name), education_level = VALUES(education_level);
-
-INSERT INTO school_profiles (tenant_id, name, academic_year, cutoff_date, cue, sector, levels, district, city)
-VALUES ('22222222-3333-4444-5555-666666666666', 'Instituto Sarmiento - Secundaria', 2026, '2026-06-30', '0600789-2', 'Privado', 'Secundario', 'General Pueyrredón', 'Mar del Plata')
-    ON DUPLICATE KEY UPDATE academic_year = VALUES(academic_year);
+INSERT INTO school_profiles (
+    tenant_id, name, academic_year, cutoff_date, cue, sector, levels,
+    legal_name, district, dipregep, shifts, address, city, phone, email
+) VALUES (
+             '88888888-4444-4444-4444-121212121212',
+             'Jardín Once Unidos',
+             2026,
+             '2026-06-30',
+             '0600123-4',
+             'Privado',
+             'Nivel Inicial',
+             'Asociación Civil Once Unidos',
+             'General Pueyrredón',
+             '1425',
+             'Mañana y Tarde',
+             'Ruperto Mazpero 2550',
+             'Mar del Plata',
+             '+54 223 472-0000',
+             'contacto@onceunidos.edu.ar'
+         ) ON DUPLICATE KEY UPDATE name = VALUES(name), academic_year = VALUES(academic_year);

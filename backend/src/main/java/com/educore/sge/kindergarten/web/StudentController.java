@@ -70,9 +70,11 @@ public class StudentController {
             student.setAcademicYear(LocalDate.now().getYear());
         }
 
+        // 🟢 Se pasa institutionId para que el servicio busque las aulas configuradas de esta escuela
         String salaCalculada = classroomAssignmentService.calculateClassroom(
                 student.getBirthDate(),
-                student.getAcademicYear()
+                student.getAcademicYear(),
+                institutionId
         );
         student.setClassroom(salaCalculada);
 
@@ -107,7 +109,7 @@ public class StudentController {
         repository.delete(alumno);
     }
 
-    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TUTOR')")
+    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PutMapping("/{id}")
     public StudentJpaEntity updateStudent(
             @RequestHeader("X-Institution-Id") String institutionId,
@@ -117,6 +119,7 @@ public class StudentController {
         StudentJpaEntity existing = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado"));
 
+        // Datos básicos
         existing.setLegajoNumber(updatedStudent.getLegajoNumber());
         existing.setFirstName(updatedStudent.getFirstName());
         existing.setLastName(updatedStudent.getLastName());
@@ -127,12 +130,48 @@ public class StudentController {
             existing.setAcademicYear(updatedStudent.getAcademicYear());
         }
 
-        String salaRecalculada = classroomAssignmentService.calculateClassroom(
-                existing.getBirthDate(),
-                existing.getAcademicYear()
-        );
-        existing.setClassroom(salaRecalculada);
+        // 🟢 Aula manual o automática
+        if (updatedStudent.getClassroom() != null && !updatedStudent.getClassroom().isBlank()) {
+            existing.setClassroom(updatedStudent.getClassroom());
+        } else {
+            // 🟢 Se pasa institutionId (o existing.getTenantId()) para recalcular según las reglas del gestor
+            String salaRecalculada = classroomAssignmentService.calculateClassroom(
+                    existing.getBirthDate(),
+                    existing.getAcademicYear(),
+                    institutionId
+            );
+            existing.setClassroom(salaRecalculada);
+        }
 
+        // 1. Identidad y Documentación Legal
+        existing.setCuil(updatedStudent.getCuil());
+        existing.setDniStatus(updatedStudent.getDniStatus());
+        existing.setGenderIdentity(updatedStudent.getGenderIdentity());
+
+        // 2. Origen y Nacimiento
+        existing.setBirthCountry(updatedStudent.getBirthCountry());
+        existing.setNationality(updatedStudent.getNationality());
+        existing.setBirthProvince(updatedStudent.getBirthProvince());
+        existing.setBirthLocality(updatedStudent.getBirthLocality());
+
+        // 3. Domicilio Estructurado
+        existing.setStreet(updatedStudent.getStreet());
+        existing.setStreetNumber(updatedStudent.getStreetNumber());
+        existing.setFloor(updatedStudent.getFloor());
+        existing.setTower(updatedStudent.getTower());
+        existing.setApartment(updatedStudent.getApartment());
+        existing.setBetweenStreets(updatedStudent.getBetweenStreets());
+        existing.setAddressLocality(updatedStudent.getAddressLocality());
+
+        // 4. Datos Sociodemográficos y Escolares
+        existing.setHasSiblings(updatedStudent.getHasSiblings());
+        existing.setSiblingCount(updatedStudent.getSiblingCount());
+        existing.setSiblingsInThisSchool(updatedStudent.getSiblingsInThisSchool());
+        existing.setReceivesAuh(updatedStudent.getReceivesAuh());
+        existing.setBelongsToNativePeople(updatedStudent.getBelongsToNativePeople());
+        existing.setTransportationMethods(updatedStudent.getTransportationMethods());
+
+        // Campos anteriores de contacto y salud
         existing.setGender(updatedStudent.getGender());
         existing.setBloodType(updatedStudent.getBloodType());
         existing.setHealthInsurance(updatedStudent.getHealthInsurance());
@@ -140,7 +179,8 @@ public class StudentController {
         existing.setBirthPlace(updatedStudent.getBirthPlace());
         existing.setAddress(updatedStudent.getAddress());
         existing.setContactPhone(updatedStudent.getContactPhone());
+        existing.setStudentShift(updatedStudent.getStudentShift());
 
         return repository.save(existing);
     }
-    }
+}

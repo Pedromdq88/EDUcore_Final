@@ -459,6 +459,29 @@ CREATE TABLE IF NOT EXISTS student_medical_records (
     CONSTRAINT fk_medical_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
     );
 
+CREATE TABLE class_schedules (
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    tenant_id VARCHAR(36) NOT NULL,
+    classroom_id VARCHAR(36) NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    teacher_name VARCHAR(255) NOT NULL,
+    day_of_week INT NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    INDEX idx_schedule_tenant_day (tenant_id, day_of_week),
+    INDEX idx_schedule_classroom (classroom_id)
+);
+
+CREATE TABLE school_calendar_events (
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    tenant_id VARCHAR(36) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    date DATE NOT NULL,
+    category VARCHAR(40) NOT NULL,
+    section VARCHAR(40) NOT NULL,
+    INDEX idx_school_events_tenant_date (tenant_id, date)
+);
+
 
 --INSERTAMOS UN JARDIN PARA USAR DE PRUEBA
 

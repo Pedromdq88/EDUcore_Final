@@ -1,0 +1,4 @@
+com\educore\sge\institution\infrastructure\domain\ClassroomShift.class
+com\educore\sge\institution\infrastructure\entity\ClassroomConfigJpaEntity.class
+com\educore\sge\institution\infrastructure\repository\ClassroomConfigRepository.class
+com\educore\sge\institution\web\ClassroomConfigController.class

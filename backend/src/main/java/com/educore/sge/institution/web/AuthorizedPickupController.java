@@ -72,8 +72,10 @@ public class AuthorizedPickupController {
 
         return repository.findById(pickupId)
                 .map(existing -> {
-                    if (!institutionId.equals(existing.getTenantId())) {
-                        return ResponseEntity.status(HttpStatus.FORBIDDEN).body("No pertenece a esta institución.");
+                    if (!institutionId.equals(existing.getTenantId())
+                            || !studentId.equals(existing.getStudentId())) {
+                        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                                .body("No pertenece a esta institución o alumno.");
                     }
                     existing.setFullName(body.getFullName());
                     existing.setDocumentNumber(body.getDocumentNumber());
@@ -94,7 +96,8 @@ public class AuthorizedPickupController {
 
         return repository.findById(pickupId)
                 .map(existing -> {
-                    if (!institutionId.equals(existing.getTenantId())) {
+                    if (!institutionId.equals(existing.getTenantId())
+                            || !studentId.equals(existing.getStudentId())) {
                         return new ResponseEntity<Void>(HttpStatus.FORBIDDEN);
                     }
                     repository.delete(existing);

@@ -1,5 +1,7 @@
 package com.educore.sge.institution.web;
-
+import com.educore.sge.auth.AuthService;
+import com.educore.sge.auth.AuthTokens;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import com.educore.sge.institution.infrastructure.entity.StaffAssignmentJpaEntity;
 import com.educore.sge.institution.infrastructure.entity.StaffJpaEntity;
 import com.educore.sge.institution.infrastructure.repository.PortfolioJpaRepository;
@@ -17,21 +19,24 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-@CrossOrigin(origins = "*", allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
 @RestController
 @RequestMapping("/api/v1/institution/staff")
 public class StaffController {
 
+    private final AuthService authService;
+    private final PasswordEncoder passwordEncoder;
     private final StaffJpaRepository staffRepository;
     private final StaffHistoryRepository staffHistoryRepository;
     private final PortfolioJpaRepository portfolioRepository;
 
     public StaffController(StaffJpaRepository staffRepository,
                            StaffHistoryRepository staffHistoryRepository,
-                           PortfolioJpaRepository portfolioRepository) {
+                           PortfolioJpaRepository portfolioRepository, AuthService authService, PasswordEncoder passwordEncoder) {
         this.staffRepository = staffRepository;
         this.staffHistoryRepository = staffHistoryRepository;
         this.portfolioRepository = portfolioRepository;
+        this.authService = authService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
@@ -72,13 +77,23 @@ public class StaffController {
         }
 
         staff.setTenantId(institutionId);
+        if (staff.getRole() == null)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rol obligatorio");
+        // Docentes: dirección y administración. Administrativos: solo dirección.
+        if (staff.getRole().name().equals("DIRECTOR")
+                || !(staff.getRole().name().equals("ADMINISTRATIVE") || staff.getRole().name().equals("TEACHER")))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Desde este formulario solo se crean administrativos o docentes");
+        if ("ADMINISTRATIVE".equals(authService.principal().role())
+                && !staff.getRole().name().equals("TEACHER"))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Un administrativo solo puede crear docentes");
 
         if (staff.getStatus() == null || staff.getStatus().isBlank()) {
             staff.setStatus("ACTIVE");
         }
-        if (staff.getPassword() == null || staff.getPassword().isBlank()) {
-            staff.setPassword("123");
-        }
+        // Nunca aceptar contraseñas recibidas desde el navegador. Este campo heredado no autentica.
+        staff.setPassword(passwordEncoder.encode(AuthTokens.generate()));
 
         if (staff.getAssignments() != null) {
             for (StaffAssignmentJpaEntity asg : staff.getAssignments()) {
@@ -90,7 +105,9 @@ public class StaffController {
             }
         }
 
-        return staffRepository.save(staff);
+        StaffJpaEntity saved = staffRepository.saveAndFlush(staff);
+        authService.provision(institutionId, "STAFF", saved.getId(), saved.getEmail(), saved.getRole().name());
+        return saved;
     }
 
     @Transactional
@@ -108,9 +125,27 @@ public class StaffController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No tienes permiso sobre personal de otra institución.");
         }
 
+        if ("ADMINISTRATIVE".equals(authService.principal().role())
+                && existing.getRole() != null
+                && (existing.getRole().name().equals("DIRECTOR") || existing.getRole().name().equals("ADMINISTRATIVE"))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Solo dirección puede modificar directores o administrativos");
+        }
+
         existing.setFirstName(updated.getFirstName());
         existing.setLastName(updated.getLastName());
         existing.setEmail(updated.getEmail());
+        if (updated.getRole() == null)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rol obligatorio");
+        if ("ADMINISTRATIVE".equals(authService.principal().role())
+                && !updated.getRole().name().equals("TEACHER"))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Un administrativo solo puede gestionar docentes");
+        // Evitar ascender a director desde formularios de personal.
+        if (updated.getRole().name().equals("DIRECTOR")
+                && (existing.getRole() == null || !existing.getRole().name().equals("DIRECTOR")))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "No se puede asignar el rol de director desde el formulario");
         existing.setRole(updated.getRole());
         existing.setClassroom(updated.getClassroom());
 
@@ -133,7 +168,9 @@ public class StaffController {
             }
         }
 
-        return staffRepository.save(existing);
+        StaffJpaEntity saved = staffRepository.saveAndFlush(existing);
+        authService.provision(institutionId, "STAFF", saved.getId(), saved.getEmail(), saved.getRole().name());
+        return saved;
     }
 
     @Transactional
@@ -148,6 +185,14 @@ public class StaffController {
 
         if (!institutionId.equals(staff.getTenantId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No tienes permiso sobre personal de otra institución.");
+        }
+
+        // El administrativo no puede dar de baja a un director ni a otro administrativo.
+        if ("ADMINISTRATIVE".equals(authService.principal().role())
+                && staff.getRole() != null
+                && (staff.getRole().name().equals("DIRECTOR") || staff.getRole().name().equals("ADMINISTRATIVE"))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Solo dirección puede dar de baja personal administrativo o directivo");
         }
 
         // 1. Guardar en la tabla histórica
@@ -175,6 +220,9 @@ public class StaffController {
         }
 
         // 3. Eliminar el registro del personal
+        authService.revoke(institutionId, "STAFF", staff.getId());
         staffRepository.delete(staff);
     }
 }
+
+

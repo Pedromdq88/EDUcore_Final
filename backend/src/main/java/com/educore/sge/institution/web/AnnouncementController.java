@@ -1,5 +1,6 @@
 package com.educore.sge.institution.web;
 
+import com.educore.sge.auth.AuthService;
 import com.educore.sge.institution.infrastructure.entity.AnnouncementJpaEntity;
 import com.educore.sge.institution.infrastructure.repository.AnnouncementJpaRepository;
 import org.springframework.http.HttpStatus;
@@ -17,15 +18,15 @@ import java.util.UUID;
 public class AnnouncementController {
 
     private final AnnouncementJpaRepository repository;
-
-    public AnnouncementController(AnnouncementJpaRepository repository) {
+    private final AuthService auth;
+    public AnnouncementController(AnnouncementJpaRepository repository, AuthService auth) {
         this.repository = repository;
+        this.auth = auth;
     }
 
     @GetMapping
     public List<AnnouncementJpaEntity> getAnnouncements(
-            @RequestHeader("X-Institution-Id") String institutionId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "TUTOR") String userRole) {
+            @RequestHeader("X-Institution-Id") String institutionId) {
 
         return repository.findAllByTenantIdOrderByIsPinnedDescCreatedAtDesc(institutionId);
     }
@@ -34,10 +35,9 @@ public class AnnouncementController {
     @PostMapping
     public ResponseEntity<AnnouncementJpaEntity> createAnnouncement(
             @RequestHeader("X-Institution-Id") String institutionId,
-            @RequestHeader("X-User-Role") String userRole,
             @RequestBody AnnouncementJpaEntity body) {
 
-        if ("TEACHER".equals(userRole) && "GLOBAL".equals(body.getScope())) {
+        if ("TEACHER".equals(auth.principal().role()) && "GLOBAL".equals(body.getScope())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Los docentes solo pueden emitir comunicados para su salita/curso asignado.");
         }
         if (body.getCreatedAt() == null) {

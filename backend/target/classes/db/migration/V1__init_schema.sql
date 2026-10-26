@@ -471,6 +471,37 @@ CREATE TABLE class_schedules (
     INDEX idx_schedule_tenant_day (tenant_id, day_of_week),
     INDEX idx_schedule_classroom (classroom_id)
 );
+-- Login por institución, rol real y contraseñas BCrypt.
+CREATE TABLE auth_accounts (
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    tenant_id VARCHAR(36) NOT NULL,
+    email VARCHAR(150) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    person_type VARCHAR(25) NOT NULL,
+    person_id VARCHAR(36) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    failed_attempts INT NOT NULL DEFAULT 0,
+    locked_until TIMESTAMP NULL,
+    reset_token_hash VARCHAR(64) NULL,
+    reset_expires_at TIMESTAMP NULL,
+    last_reset_sent_at TIMESTAMP NULL,
+    CONSTRAINT uq_auth_tenant_email UNIQUE (tenant_id,email),
+    CONSTRAINT uq_auth_tenant_person UNIQUE (tenant_id,person_type,person_id),
+    CONSTRAINT uq_auth_reset_token UNIQUE (reset_token_hash),
+    INDEX idx_auth_tenant (tenant_id)
+);
+CREATE TABLE auth_sessions (
+    token_hash VARCHAR(64) NOT NULL PRIMARY KEY,
+    account_id VARCHAR(36) NOT NULL,
+    tenant_id VARCHAR(36) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    INDEX idx_auth_sessions_account (account_id),
+    INDEX idx_auth_sessions_expiry (expires_at),
+    CONSTRAINT fk_auth_sessions_account FOREIGN KEY (account_id)
+        REFERENCES auth_accounts(id) ON DELETE CASCADE
+);
+
 
 CREATE TABLE school_calendar_events (
     id VARCHAR(36) NOT NULL PRIMARY KEY,
@@ -481,6 +512,21 @@ CREATE TABLE school_calendar_events (
     section VARCHAR(40) NOT NULL,
     INDEX idx_school_events_tenant_date (tenant_id, date)
 );
+
+
+
+UPDATE auth_accounts a
+INNER JOIN institution_staff s
+    ON a.person_id = s.id
+    AND a.tenant_id = s.tenant_id
+SET
+    a.password_hash = '$2y$12$NFrV2PHGJRMk..Li7sGDx.CIthtUmG3VTfU/9bNhXGMU2dovEVy2O',
+    a.enabled = TRUE,
+    a.failed_attempts = 0,
+    a.locked_until = NULL
+WHERE a.email = 'direccion@onceunidos.com'
+  AND a.person_type = 'STAFF'
+  AND s.document_number = '1234';
 
 
 --INSERTAMOS UN JARDIN PARA USAR DE PRUEBA

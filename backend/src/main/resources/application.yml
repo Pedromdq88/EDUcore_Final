@@ -33,3 +33,5 @@ management:
       probes:
         enabled: true
       show-details: never
+jwt:
+  secret-base64: ${EDUCORE_JWT_SECRET_BASE64:}

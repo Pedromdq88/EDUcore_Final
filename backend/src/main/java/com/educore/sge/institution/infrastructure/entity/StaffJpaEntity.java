@@ -4,6 +4,7 @@ import com.educore.sge.shared.BaseInstitutionEntity;
 import com.educore.sge.shared.Rol;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -34,8 +35,9 @@ public class StaffJpaEntity extends BaseInstitutionEntity {
     @Column(name = "email", nullable = false, length = 150)
     private String email;
 
+    @JsonIgnore
     @Column(name = "password", nullable = false, length = 255)
-    private String password = "123";
+    private String password;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 50)

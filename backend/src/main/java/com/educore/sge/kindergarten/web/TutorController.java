@@ -1,5 +1,6 @@
 package com.educore.sge.kindergarten.web;
 
+import com.educore.sge.auth.AuthService;
 import com.educore.sge.kindergarten.application.StudentTutorService;
 import com.educore.sge.kindergarten.application.TutorService;
 import com.educore.sge.kindergarten.infrastructure.dto.TutorDTO;
@@ -24,11 +25,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-@CrossOrigin(origins = "*", allowedHeaders = "*")
 @RestController
 @RequestMapping("/api/v1/tutors")
 public class TutorController {
 
+    private final AuthService authService;
     private final TutorJpaRepository repository;
     private final StudentJpaRepository studentRepository;
     private final TutorService tutorService;
@@ -42,7 +43,8 @@ public class TutorController {
     @Autowired
     private StudentTutorService studentTutorService;
 
-    public TutorController(TutorJpaRepository repository, StudentJpaRepository studentRepository, TutorService tutorService) {
+    public TutorController(TutorJpaRepository repository, StudentJpaRepository studentRepository, TutorService tutorService, AuthService authService) {
+        this.authService = authService;
         this.repository = repository;
         this.studentRepository = studentRepository;
         this.tutorService = tutorService;
@@ -57,7 +59,8 @@ public class TutorController {
     }
 
     // REGISTRAR NUEVO TUTOR (Exigiendo el Tenant ID)
-    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TEACHER')")
+    @Transactional
+    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PostMapping
     public TutorJpaEntity createTutor(
             @RequestHeader("X-Institution-Id") String institutionId,
@@ -65,7 +68,9 @@ public class TutorController {
 
         tutor.setId(UUID.randomUUID().toString());
         tutor.setTenantId(institutionId);
-        return repository.save(tutor);
+        TutorJpaEntity saved = repository.saveAndFlush(tutor);
+        authService.provision(institutionId, "TUTOR", saved.getId(), saved.getEmail(), "TUTOR");
+        return saved;
     }
 
     // PROCESAR BAJA HISTÓRICA DEL TUTOR (Aislado por Tenant)
@@ -134,18 +139,25 @@ public class TutorController {
             }
         }
 
+        authService.revoke(institutionId, "TUTOR", tutor.getId());
         repository.delete(tutor);
     }
 
     // ACTUALIZAR DATOS DEL TUTOR
-    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TEACHER', 'TUTOR')")
+    @Transactional
+    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PutMapping("/{id}")
     public ResponseEntity<TutorDTO> updateTutor(
             @PathVariable String id,
             @RequestBody TutorDTO tutorDto,
             @RequestHeader("X-Institution-Id") String institutionId) {
 
+        TutorJpaEntity existing = repository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tutor no encontrado"));
+        if (!institutionId.equals(existing.getTenantId()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Otra institución");
         TutorDTO updated = tutorService.updateTutor(id, tutorDto);
+        authService.provision(institutionId, "TUTOR", id, updated.getEmail(), "TUTOR");
         return ResponseEntity.ok(updated);
     }
 }

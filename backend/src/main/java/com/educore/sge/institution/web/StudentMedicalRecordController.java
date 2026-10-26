@@ -1,5 +1,7 @@
 package com.educore.sge.institution.web;
 
+import com.educore.sge.auth.AuthService;
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.educore.sge.institution.infrastructure.entity.StudentMedicalRecord;
 import com.educore.sge.institution.infrastructure.repository.StudentMedicalRecordRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,7 +18,10 @@ public class StudentMedicalRecordController {
 
     @Autowired
     private StudentMedicalRecordRepository medicalRepository;
+    @Autowired
+    private AuthService authService;
 
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE','TEACHER')")
     @GetMapping("/{studentId}/medical-record")
     public ResponseEntity<StudentMedicalRecord> getMedicalRecord(
             @PathVariable String studentId,
@@ -27,18 +32,12 @@ public class StudentMedicalRecordController {
         return ResponseEntity.ok(record);
     }
 
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
     @PostMapping("/{studentId}/medical-record")
     public ResponseEntity<?> saveMedicalRecord(
             @PathVariable String studentId,
             @RequestHeader("X-Institution-Id") String tenantId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "TEACHER") String userRole,
             @RequestBody StudentMedicalRecord incoming) {
-
-        // Validación estricta de roles institucionales
-        if (!"DIRECTOR".equals(userRole) && !"ADMINISTRATIVE".equals(userRole)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body("Acceso denegado: Solo Dirección y Administración pueden registrar o modificar fichas médicas.");
-        }
 
         StudentMedicalRecord record = medicalRepository.findByStudentIdAndTenantId(studentId, tenantId)
                 .orElse(new StudentMedicalRecord());

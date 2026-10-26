@@ -46,10 +46,13 @@ public class StudentController {
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
     @GetMapping("/{id}")
-    public StudentJpaEntity getStudentById(@PathVariable String id) {
+    public StudentJpaEntity getStudentById(@PathVariable String id,
+                                           @RequestHeader("X-Institution-Id") String institutionId) {
         StudentJpaEntity student = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado con ID: " + id));
 
+        if (!institutionId.equals(student.getTenantId()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Alumno de otra institución");
         if (student.getTutors() != null) {
             student.getTutors().size();
         }
@@ -89,10 +92,13 @@ public class StudentController {
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PostMapping("/{id}/baja")
-    public void darDeBajaAlumno(@PathVariable String id) {
+    public void darDeBajaAlumno(@PathVariable String id,
+                                @RequestHeader("X-Institution-Id") String institutionId) {
         StudentJpaEntity alumno = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado"));
 
+        if (!institutionId.equals(alumno.getTenantId()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Alumno de otra institución");
         StudentHistoryJpaEntity historico = new StudentHistoryJpaEntity(
                 alumno.getId(),
                 alumno.getFirstName(),
@@ -119,6 +125,8 @@ public class StudentController {
         StudentJpaEntity existing = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado"));
 
+        if (!institutionId.equals(existing.getTenantId()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Alumno de otra institución");
         // Datos básicos
         existing.setLegajoNumber(updatedStudent.getLegajoNumber());
         existing.setFirstName(updatedStudent.getFirstName());

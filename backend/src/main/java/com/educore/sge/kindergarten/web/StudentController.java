@@ -40,15 +40,54 @@ public class StudentController {
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
     @GetMapping
     public List<StudentJpaEntity> getAllStudents(
-            @RequestHeader("X-Institution-Id") String institutionId) {
-        return repository.findByTenantId(institutionId);
+            @RequestHeader("X-Institution-Id") String institutionId,
+            @RequestParam(required = false) String busqueda,
+            @RequestParam(required = false) String curso) {
+
+        // Limpiar el texto ingresado en el buscador.
+        if (busqueda != null) {
+            busqueda = busqueda.trim();
+
+            if (busqueda.isEmpty()) {
+                busqueda = null;
+            }
+        }
+
+        // Limpiar el filtro de curso.
+        if (curso != null) {
+            curso = curso.trim();
+
+            if (curso.isEmpty()) {
+                curso = null;
+            }
+        }
+
+        return repository.buscarAlumnos(
+                institutionId,
+                busqueda,
+                curso
+        );
     }
+
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
     @GetMapping("/{id}")
-    public StudentJpaEntity getStudentById(@PathVariable String id) {
+    public StudentJpaEntity getStudentById(
+            @RequestHeader("X-Institution-Id") String institutionId,
+            @PathVariable String id) {
+
         StudentJpaEntity student = repository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado con ID: " + id));
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Alumno no encontrado"
+                ));
+
+        if (!institutionId.equals(student.getTenantId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Alumno no encontrado"
+            );
+        }
 
         if (student.getTutors() != null) {
             student.getTutors().size();
@@ -63,6 +102,39 @@ public class StudentController {
             @RequestHeader("X-Institution-Id") String institutionId,
             @RequestBody StudentJpaEntity student) {
 
+        if (student.getDocumentNumber() == null
+                || student.getDocumentNumber().isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "El DNI del alumno es obligatorio."
+            );
+        }
+
+        String dni = student.getDocumentNumber().trim();
+
+        if (repository.existsByTenantIdAndDocumentNumber(institutionId, dni)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Ya existe un alumno con ese DNI en la institución."
+            );
+        }
+
+        String legajo = student.getLegajoNumber();
+
+        if (legajo != null && !legajo.isBlank()) {
+            legajo = legajo.trim();
+
+            if (repository.existsByTenantIdAndLegajoNumber(institutionId, legajo)) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Ya existe un alumno con ese legajo en la institución."
+                );
+            }
+
+            student.setLegajoNumber(legajo);
+        }
+
+        student.setDocumentNumber(dni);
         student.setId(UUID.randomUUID().toString());
         student.setTenantId(institutionId);
 
@@ -70,12 +142,12 @@ public class StudentController {
             student.setAcademicYear(LocalDate.now().getYear());
         }
 
-        // 🟢 Se pasa institutionId para que el servicio busque las aulas configuradas de esta escuela
         String salaCalculada = classroomAssignmentService.calculateClassroom(
                 student.getBirthDate(),
                 student.getAcademicYear(),
                 institutionId
         );
+
         student.setClassroom(salaCalculada);
 
         return repository.save(student);
@@ -89,10 +161,25 @@ public class StudentController {
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PostMapping("/{id}/baja")
-    public void darDeBajaAlumno(@PathVariable String id) {
-        StudentJpaEntity alumno = repository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado"));
+    public void darDeBajaAlumno(
+            @RequestHeader("X-Institution-Id") String institutionId,
+            @PathVariable String id) {
 
+        StudentJpaEntity alumno = repository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Alumno no encontrado"
+                ));
+
+        // Verificar que el alumno pertenezca a la institución.
+        if (!institutionId.equals(alumno.getTenantId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Alumno no encontrado"
+            );
+        }
+
+        // Guardar el historial del alumno antes de eliminarlo.
         StudentHistoryJpaEntity historico = new StudentHistoryJpaEntity(
                 alumno.getId(),
                 alumno.getFirstName(),
@@ -104,6 +191,7 @@ public class StudentController {
                 alumno.getAddress(),
                 LocalDate.now()
         );
+
         studentHistoryRepository.save(historico);
 
         repository.delete(alumno);
@@ -117,44 +205,92 @@ public class StudentController {
             @RequestBody StudentJpaEntity updatedStudent) {
 
         StudentJpaEntity existing = repository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado"));
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Alumno no encontrado"
+                ));
 
-        // Datos básicos
-        existing.setLegajoNumber(updatedStudent.getLegajoNumber());
+        // Verificar que el alumno pertenezca a la institución.
+        if (!institutionId.equals(existing.getTenantId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Alumno no encontrado"
+            );
+        }
+
+        // Validar que el DNI sea obligatorio.
+        if (updatedStudent.getDocumentNumber() == null
+                || updatedStudent.getDocumentNumber().isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "El DNI del alumno es obligatorio."
+            );
+        }
+
+        String dni = updatedStudent.getDocumentNumber().trim();
+
+        // Comprobar que otro alumno no tenga el mismo DNI.
+        if (repository.existsByTenantIdAndDocumentNumberAndIdNot(
+                institutionId, dni, id)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Ya existe otro alumno con ese DNI en la institución."
+            );
+        }
+
+        // Validar el legajo si se informó.
+        String legajo = updatedStudent.getLegajoNumber();
+
+        if (legajo != null && !legajo.isBlank()) {
+            legajo = legajo.trim();
+
+            if (repository.existsByTenantIdAndLegajoNumberAndIdNot(
+                    institutionId, legajo, id)) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Ya existe otro alumno con ese legajo en la institución."
+                );
+            }
+        }
+
+        // Datos básicos.
+        existing.setLegajoNumber(legajo);
         existing.setFirstName(updatedStudent.getFirstName());
         existing.setLastName(updatedStudent.getLastName());
-        existing.setDocumentNumber(updatedStudent.getDocumentNumber());
+        existing.setDocumentNumber(dni);
         existing.setBirthDate(updatedStudent.getBirthDate());
 
         if (updatedStudent.getAcademicYear() != null) {
             existing.setAcademicYear(updatedStudent.getAcademicYear());
         }
 
-        // 🟢 Aula manual o automática
-        if (updatedStudent.getClassroom() != null && !updatedStudent.getClassroom().isBlank()) {
+        // Aula manual o calculada.
+        if (updatedStudent.getClassroom() != null
+                && !updatedStudent.getClassroom().isBlank()) {
             existing.setClassroom(updatedStudent.getClassroom());
         } else {
-            // 🟢 Se pasa institutionId (o existing.getTenantId()) para recalcular según las reglas del gestor
-            String salaRecalculada = classroomAssignmentService.calculateClassroom(
-                    existing.getBirthDate(),
-                    existing.getAcademicYear(),
-                    institutionId
-            );
+            String salaRecalculada =
+                    classroomAssignmentService.calculateClassroom(
+                            existing.getBirthDate(),
+                            existing.getAcademicYear(),
+                            institutionId
+                    );
+
             existing.setClassroom(salaRecalculada);
         }
 
-        // 1. Identidad y Documentación Legal
+        // Identidad y documentación legal.
         existing.setCuil(updatedStudent.getCuil());
         existing.setDniStatus(updatedStudent.getDniStatus());
         existing.setGenderIdentity(updatedStudent.getGenderIdentity());
 
-        // 2. Origen y Nacimiento
+        // Origen y nacimiento.
         existing.setBirthCountry(updatedStudent.getBirthCountry());
         existing.setNationality(updatedStudent.getNationality());
         existing.setBirthProvince(updatedStudent.getBirthProvince());
         existing.setBirthLocality(updatedStudent.getBirthLocality());
 
-        // 3. Domicilio Estructurado
+        // Domicilio estructurado.
         existing.setStreet(updatedStudent.getStreet());
         existing.setStreetNumber(updatedStudent.getStreetNumber());
         existing.setFloor(updatedStudent.getFloor());
@@ -163,15 +299,21 @@ public class StudentController {
         existing.setBetweenStreets(updatedStudent.getBetweenStreets());
         existing.setAddressLocality(updatedStudent.getAddressLocality());
 
-        // 4. Datos Sociodemográficos y Escolares
+        // Datos sociodemográficos y escolares.
         existing.setHasSiblings(updatedStudent.getHasSiblings());
         existing.setSiblingCount(updatedStudent.getSiblingCount());
-        existing.setSiblingsInThisSchool(updatedStudent.getSiblingsInThisSchool());
+        existing.setSiblingsInThisSchool(
+                updatedStudent.getSiblingsInThisSchool()
+        );
         existing.setReceivesAuh(updatedStudent.getReceivesAuh());
-        existing.setBelongsToNativePeople(updatedStudent.getBelongsToNativePeople());
-        existing.setTransportationMethods(updatedStudent.getTransportationMethods());
+        existing.setBelongsToNativePeople(
+                updatedStudent.getBelongsToNativePeople()
+        );
+        existing.setTransportationMethods(
+                updatedStudent.getTransportationMethods()
+        );
 
-        // Campos anteriores de contacto y salud
+        // Contacto y salud.
         existing.setGender(updatedStudent.getGender());
         existing.setBloodType(updatedStudent.getBloodType());
         existing.setHealthInsurance(updatedStudent.getHealthInsurance());

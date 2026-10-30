@@ -40,4 +40,30 @@ public interface StudentJpaRepository extends JpaRepository<StudentJpaEntity, St
             String legajoNumber,
             String id
     );
+
+
+    // Buscar alumnos por nombre, apellido, DNI, legajo y curso.
+    // Los resultados se ordenan alfabeticamente.
+    @Query("""
+            SELECT s FROM StudentJpaEntity s
+            WHERE s.tenantId = :institutionId
+            AND (
+                :busqueda IS NULL
+                OR LOWER(s.firstName) LIKE LOWER(CONCAT('%', :busqueda, '%'))
+                OR LOWER(s.lastName) LIKE LOWER(CONCAT('%', :busqueda, '%'))
+                OR s.documentNumber LIKE CONCAT('%', :busqueda, '%')
+                OR s.legajoNumber LIKE CONCAT('%', :busqueda, '%')
+            )
+            AND (
+                :curso IS NULL
+                OR LOWER(s.classroom) = LOWER(:curso)
+            )
+            ORDER BY s.lastName ASC, s.firstName ASC
+            """)
+    List<StudentJpaEntity> buscarAlumnos(
+            @Param("institutionId") String institutionId,
+            @Param("busqueda") String busqueda,
+            @Param("curso") String curso
+    );
+
 }

@@ -1,0 +1,10 @@
+
+# IntelliJ IDEA
+.idea/
+
+# Credenciales privadas
+.env
+**/.env
+
+# Archivos compilados
+**/target/

@@ -5,6 +5,7 @@ import com.educore.sge.institution.infrastructure.repository.JudicialRestriction
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
 import java.util.UUID;
@@ -20,6 +21,7 @@ public class JudicialRestrictionController {
         this.repository = repository;
     }
 
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE','PRECEPTOR')")
     @GetMapping
     public List<JudicialRestrictionJpaEntity> getRestrictions(
             @RequestHeader("X-Institution-Id") String institutionId,
@@ -27,6 +29,7 @@ public class JudicialRestrictionController {
         return repository.findAllByTenantIdAndStudentId(institutionId, studentId);
     }
 
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
     @PostMapping
     public ResponseEntity<?> addRestriction(
             @RequestHeader("X-Institution-Id") String institutionId,
@@ -44,6 +47,7 @@ public class JudicialRestrictionController {
         return ResponseEntity.ok(repository.save(body));
     }
 
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
     @DeleteMapping("/{restrictionId}")
     public ResponseEntity<Void> deleteRestriction(
             @RequestHeader("X-Institution-Id") String institutionId,

@@ -1,16 +1,20 @@
+
 spring:
   application:
     name: educore-sge-backend
 
+  config:
+    import: "file:./backend/.env[.properties]"
+
   datasource:
-    url: jdbc:mysql://localhost:3306/educore_sge?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
-    username: root
-    password: Root
+    url: jdbc:mysql://localhost:3306/educore_sge?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: ${EDUCORE_DB_USER:root}
+    password: ${EDUCORE_DB_PASSWORD:Root}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: none
     open-in-view: false
 
   flyway:
@@ -26,7 +30,20 @@ management:
       probes:
         enabled: true
       show-details: never
-  # Desactivamos el chequeo automático de RabbitMQ para limpiar la consola
   health:
     rabbit:
       enabled: false
+
+educore:
+  bootstrap:
+    director-email: ${EDUCORE_DIRECTOR_EMAIL:}
+    director-password: ${EDUCORE_DIRECTOR_PASSWORD:}
+    tenant-id: ${EDUCORE_DIRECTOR_TENANT_ID:}
+    school-name: ${EDUCORE_BOOTSTRAP_SCHOOL_NAME:}
+
+  gmail:
+    enabled: ${EDUCORE_GMAIL_ENABLED:false}
+    from-address: ${EDUCORE_GMAIL_FROM:}
+    client-id: ${EDUCORE_GMAIL_CLIENT_ID:}
+    client-secret: ${EDUCORE_GMAIL_CLIENT_SECRET:}
+    refresh-token: ${EDUCORE_GMAIL_REFRESH_TOKEN:}

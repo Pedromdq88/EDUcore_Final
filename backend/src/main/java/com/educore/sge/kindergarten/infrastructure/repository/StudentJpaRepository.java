@@ -12,6 +12,8 @@ import java.util.List;
 public interface StudentJpaRepository extends JpaRepository<StudentJpaEntity, String> {
 
     List<StudentJpaEntity> findByTenantId(String tenantId);
+    @Query("SELECT DISTINCT s FROM StudentJpaEntity s JOIN s.tutors t WHERE s.tenantId = :tenantId AND t.id = :tutorId")
+    List<StudentJpaEntity> findByTenantIdAndTutor(@Param("tenantId") String tenantId, @Param("tutorId") String tutorId);
     @Query("SELECT COUNT(s) > 0 FROM StudentJpaEntity s JOIN s.tutors t WHERE s.id = :studentId AND t.id = :tutorId")
     boolean existsByIdAndTutorsId(@Param("studentId") String studentId, @Param("tutorId") String tutorId);
 }

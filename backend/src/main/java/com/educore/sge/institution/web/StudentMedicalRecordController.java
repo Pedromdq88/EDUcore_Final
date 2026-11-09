@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.UUID;
 
@@ -16,26 +17,43 @@ public class StudentMedicalRecordController {
 
     @Autowired
     private StudentMedicalRecordRepository medicalRepository;
+    @Autowired
+    private com.educore.sge.auth.AuthUserRepository authAccounts;
+    @Autowired
+    private com.educore.sge.kindergarten.infrastructure.repository.StudentJpaRepository students;
+    @Autowired
+    private com.educore.sge.auth.RoleScopeService scopes;
 
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE','PRECEPTOR','TUTOR')")
     @GetMapping("/{studentId}/medical-record")
     public ResponseEntity<StudentMedicalRecord> getMedicalRecord(
             @PathVariable String studentId,
-            @RequestHeader("X-Institution-Id") String tenantId) {
+            @RequestHeader("X-Institution-Id") String tenantId,
+            org.springframework.security.core.Authentication authentication) {
+
+        if (authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_TUTOR"))) {
+            String tutorId=scopes.verifiedTutorId(authentication,tenantId);
+            boolean linked=students.findByTenantIdAndTutor(tenantId,tutorId).stream()
+                .anyMatch(s -> studentId.equals(s.getId()));
+            if (!linked) throw new org.springframework.web.server.ResponseStatusException(
+                HttpStatus.FORBIDDEN,"Solo podés consultar la ficha médica de tus alumnos vinculados");
+        }
 
         StudentMedicalRecord record = medicalRepository.findByStudentIdAndTenantId(studentId, tenantId)
                 .orElse(new StudentMedicalRecord());
         return ResponseEntity.ok(record);
     }
 
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
     @PostMapping("/{studentId}/medical-record")
     public ResponseEntity<?> saveMedicalRecord(
             @PathVariable String studentId,
             @RequestHeader("X-Institution-Id") String tenantId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "TEACHER") String userRole,
+            org.springframework.security.core.Authentication authentication,
             @RequestBody StudentMedicalRecord incoming) {
 
         // Validación estricta de roles institucionales
-        if (!"DIRECTOR".equals(userRole) && !"ADMINISTRATIVE".equals(userRole)) {
+        if (authentication.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ROLE_DIRECTOR") || a.getAuthority().equals("ROLE_ADMINISTRATIVE"))) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body("Acceso denegado: Solo Dirección y Administración pueden registrar o modificar fichas médicas.");
         }

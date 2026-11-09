@@ -26,12 +26,12 @@ public class StudentTutorService {
     public void assignTutorsToStudent(String studentId, List<TutorAssignmentRequest> tutorRequests) {
         // 1. Validar presencia de al menos 1 tutor
         if (tutorRequests == null || tutorRequests.isEmpty()) {
-            throw new IllegalArgumentException("Un alumno de Jardín debe contar con al menos 1 tutor responsable.");
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Un alumno de Jardín debe contar con al menos 1 tutor responsable.");
         }
 
         // 2. Regla de negocio: Máximo 2 tutores
         if (tutorRequests.size() > 2) {
-            throw new IllegalArgumentException("Un alumno de Jardín de Infantes no puede tener más de 2 tutores legales asignados.");
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Un alumno de Jardín de Infantes no puede tener más de 2 tutores legales asignados.");
         }
 
         // 3. Validar no duplicidad de tutores
@@ -41,7 +41,7 @@ public class StudentTutorService {
                 .count();
 
         if (uniqueTutorsCount < tutorRequests.size()) {
-            throw new IllegalArgumentException("No se puede vincular el mismo tutor dos veces al mismo alumno.");
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "No se puede vincular el mismo tutor dos veces al mismo alumno.");
         }
 
         // 4. Buscar estudiante
@@ -55,6 +55,9 @@ public class StudentTutorService {
             TutorJpaEntity tutor = tutorRepository.findById(request.getTutorId())
                     .orElseThrow(() -> new RuntimeException("Tutor no encontrado con ID: " + request.getTutorId()));
 
+            if (!student.getTenantId().equals(tutor.getTenantId())) {
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Tutor de otra institución.");
+            }
             tutorsToAssign.add(tutor);
         }
 

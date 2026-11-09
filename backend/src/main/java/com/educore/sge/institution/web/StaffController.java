@@ -1,6 +1,7 @@
 package com.educore.sge.institution.web;
 
 import com.educore.sge.institution.infrastructure.entity.StaffAssignmentJpaEntity;
+import com.educore.sge.auth.AuthService;
 import com.educore.sge.institution.infrastructure.entity.StaffJpaEntity;
 import com.educore.sge.institution.infrastructure.repository.PortfolioJpaRepository;
 import com.educore.sge.institution.infrastructure.repository.StaffJpaRepository;
@@ -25,23 +26,25 @@ public class StaffController {
     private final StaffJpaRepository staffRepository;
     private final StaffHistoryRepository staffHistoryRepository;
     private final PortfolioJpaRepository portfolioRepository;
+    private final AuthService authService;
 
     public StaffController(StaffJpaRepository staffRepository,
                            StaffHistoryRepository staffHistoryRepository,
-                           PortfolioJpaRepository portfolioRepository) {
+                           PortfolioJpaRepository portfolioRepository, AuthService authService) {
         this.staffRepository = staffRepository;
         this.staffHistoryRepository = staffHistoryRepository;
         this.portfolioRepository = portfolioRepository;
+        this.authService = authService;
     }
 
-    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
+    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @GetMapping
     public List<StaffJpaEntity> getAllStaff(
             @RequestHeader("X-Institution-Id") String institutionId) {
         return staffRepository.findAllByTenantId(institutionId);
     }
 
-    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
+    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @GetMapping("/{id}")
     public StaffJpaEntity getStaffById(
             @RequestHeader("X-Institution-Id") String institutionId,
@@ -56,7 +59,7 @@ public class StaffController {
     }
 
     @Transactional
-    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
     @PostMapping
     public StaffJpaEntity createStaff(
             @RequestHeader(value = "X-Institution-Id") String institutionId,
@@ -67,17 +70,28 @@ public class StaffController {
                     "Operación rechazada: No se especificó la institución escolar (X-Institution-Id)");
         }
 
+        if (staff.getFirstName() == null || staff.getFirstName().isBlank() ||
+            staff.getLastName() == null || staff.getLastName().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nombre y apellido son obligatorios.");
+        }
+        if (staff.getHireDate() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Fecha de alta obligatoria.");
+        }
         if (staff.getId() == null || staff.getId().isBlank()) {
             staff.setId(UUID.randomUUID().toString());
         }
 
+        if (staff.getRole() == com.educore.sge.shared.Rol.DIRECTOR &&
+            !org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication()
+                .getAuthorities().stream().anyMatch(a -> (a.getAuthority().equals("ROLE_DIRECTOR") || a.getAuthority().equals("ROLE_ADMINISTRATIVE"))))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Solo Dirección o Administración puede crear una cuenta Directora.");
         staff.setTenantId(institutionId);
 
         if (staff.getStatus() == null || staff.getStatus().isBlank()) {
             staff.setStatus("ACTIVE");
         }
         if (staff.getPassword() == null || staff.getPassword().isBlank()) {
-            staff.setPassword("123");
+            staff.setPassword("DISABLED_" + UUID.randomUUID());
         }
 
         if (staff.getAssignments() != null) {
@@ -90,11 +104,13 @@ public class StaffController {
             }
         }
 
-        return staffRepository.save(staff);
+        StaffJpaEntity saved = staffRepository.save(staff);
+        authService.provisionStaffAccount(saved);
+        return saved;
     }
 
     @Transactional
-    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
     @PutMapping("/{id}")
     public StaffJpaEntity updateStaff(
             @RequestHeader("X-Institution-Id") String institutionId,
@@ -111,6 +127,10 @@ public class StaffController {
         existing.setFirstName(updated.getFirstName());
         existing.setLastName(updated.getLastName());
         existing.setEmail(updated.getEmail());
+        if (updated.getRole() == com.educore.sge.shared.Rol.DIRECTOR &&
+            !org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication()
+                .getAuthorities().stream().anyMatch(a -> (a.getAuthority().equals("ROLE_DIRECTOR") || a.getAuthority().equals("ROLE_ADMINISTRATIVE"))))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Solo Dirección o Administración puede asignar el rol Director.");
         existing.setRole(updated.getRole());
         existing.setClassroom(updated.getClassroom());
 
@@ -133,11 +153,25 @@ public class StaffController {
             }
         }
 
-        return staffRepository.save(existing);
+        StaffJpaEntity saved = staffRepository.save(existing);
+        authService.provisionStaffAccount(saved);
+        return saved;
     }
 
     @Transactional
-    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
+    @PostMapping("/{id}/activate-account")
+    public java.util.Map<String,String> activateAccount(@RequestHeader("X-Institution-Id") String tenantId,@PathVariable String id){
+        StaffJpaEntity staff=staffRepository.findById(id).filter(s -> tenantId.equals(s.getTenantId()))
+            .orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"Personal no encontrado"));
+        if(!"ACTIVE".equalsIgnoreCase(staff.getStatus()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT,"El personal está dado de baja.");
+        boolean created=authService.provisionStaffAccount(staff);
+        return java.util.Map.of("status",created?"CREATED":"EXISTS","email",staff.getEmail());
+    }
+
+    @Transactional
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
     @PostMapping("/{id}/baja")
     public void darDeBajaStaff(
             @RequestHeader("X-Institution-Id") String institutionId,
@@ -173,6 +207,8 @@ public class StaffController {
             staff.getAssignments().clear();
             staffRepository.saveAndFlush(staff);
         }
+
+        authService.disableStaffAccount(institutionId, id);
 
         // 3. Eliminar el registro del personal
         staffRepository.delete(staff);

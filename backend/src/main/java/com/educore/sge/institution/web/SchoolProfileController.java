@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
@@ -78,6 +79,7 @@ public class SchoolProfileController {
     }
 
     @Transactional
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
     @PutMapping
     public SchoolProfileJpaEntity updateProfile(
             @RequestHeader("X-Institution-Id") String institutionId,
@@ -95,6 +97,7 @@ public class SchoolProfileController {
         return profileRepository.save(updated);
     }
 
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
     @GetMapping("/tickets")
     public List<SchoolChangeTicketJpaEntity> getPendingTickets(
             @RequestHeader("X-Institution-Id") String institutionId) {
@@ -105,10 +108,11 @@ public class SchoolProfileController {
     }
 
     @Transactional
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
     @PostMapping("/tickets")
     public ResponseEntity<?> createTicket(
             @RequestHeader("X-Institution-Id") String institutionId,
-            @RequestHeader(value = "X-User-Email", defaultValue = "admin@institucion.com") String userEmail,
+            org.springframework.security.core.Authentication authentication,
             @RequestBody Map<String, Object> body) {
 
         String reason = (String) body.get("reason");
@@ -122,7 +126,7 @@ public class SchoolProfileController {
             SchoolChangeTicketJpaEntity ticket = new SchoolChangeTicketJpaEntity();
             ticket.setId(UUID.randomUUID().toString());
             ticket.setTenantId(institutionId);
-            ticket.setRequestedByEmail(userEmail);
+            ticket.setRequestedByEmail(authentication.getName());
             ticket.setReason(reason);
             ticket.setProposedDataJson(objectMapper.writeValueAsString(proposedData));
             ticket.setStatus("PENDING");
@@ -135,6 +139,7 @@ public class SchoolProfileController {
     }
 
     @Transactional
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
     @PostMapping("/tickets/{ticketId}/resolve")
     public ResponseEntity<?> resolveTicket(
             @RequestHeader("X-Institution-Id") String institutionId,

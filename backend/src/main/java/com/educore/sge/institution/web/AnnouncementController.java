@@ -17,29 +17,71 @@ import java.util.UUID;
 public class AnnouncementController {
 
     private final AnnouncementJpaRepository repository;
+    private final com.educore.sge.auth.AuthUserRepository accounts;
+    private final com.educore.sge.kindergarten.infrastructure.repository.StudentJpaRepository students;
+    private final com.educore.sge.auth.RoleScopeService scopes;
 
-    public AnnouncementController(AnnouncementJpaRepository repository) {
+    public AnnouncementController(AnnouncementJpaRepository repository,
+        com.educore.sge.auth.AuthUserRepository accounts,
+        com.educore.sge.kindergarten.infrastructure.repository.StudentJpaRepository students,
+        com.educore.sge.auth.RoleScopeService scopes) {
         this.repository = repository;
+        this.accounts = accounts;
+        this.students=students;
+        this.scopes=scopes;
     }
 
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE','PRECEPTOR','TEACHER','TUTOR')")
     @GetMapping
     public List<AnnouncementJpaEntity> getAnnouncements(
             @RequestHeader("X-Institution-Id") String institutionId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "TUTOR") String userRole) {
+            org.springframework.security.core.Authentication authentication) {
 
-        return repository.findAllByTenantIdOrderByIsPinnedDescCreatedAtDesc(institutionId);
+        var notices=repository.findAllByTenantIdOrderByIsPinnedDescCreatedAtDesc(institutionId);
+        if(scopes.is(authentication,"TUTOR")) {
+            String tutorId=scopes.verifiedTutorId(authentication,institutionId);
+            var linked=students.findByTenantIdAndTutor(institutionId,tutorId);
+            var ids=linked.stream().map(s->s.getId()).collect(java.util.stream.Collectors.toSet());
+            var rooms=linked.stream().map(s->s.getClassroom()).filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+            return notices.stream().filter(n-> "GLOBAL".equals(n.getScope()) ||
+                ("CLASSROOM".equals(n.getScope()) && rooms.contains(n.getTargetClassroom())) ||
+                ("PRIVATE_STUDENT".equals(n.getScope()) && ids.contains(n.getTargetStudentId()))).toList();
+        }
+        if(scopes.is(authentication,"TEACHER")){
+            var rooms=scopes.teacherClassrooms(authentication,institutionId);
+            var ids=students.findByTenantId(institutionId).stream().filter(s->rooms.contains(s.getClassroom()))
+                .map(s->s.getId()).collect(java.util.stream.Collectors.toSet());
+            return notices.stream().filter(n->"GLOBAL".equals(n.getScope()) ||
+                ("CLASSROOM".equals(n.getScope()) && rooms.contains(n.getTargetClassroom())) ||
+                ("PRIVATE_STUDENT".equals(n.getScope()) && ids.contains(n.getTargetStudentId()))).toList();
+        }
+        if(scopes.is(authentication,"PRECEPTOR")) return notices.stream().filter(n->!"PRIVATE_STUDENT".equals(n.getScope())).toList();
+        return notices;
     }
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
     @PostMapping
     public ResponseEntity<AnnouncementJpaEntity> createAnnouncement(
             @RequestHeader("X-Institution-Id") String institutionId,
-            @RequestHeader("X-User-Role") String userRole,
+            org.springframework.security.core.Authentication authentication,
             @RequestBody AnnouncementJpaEntity body) {
 
-        if ("TEACHER".equals(userRole) && "GLOBAL".equals(body.getScope())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Los docentes solo pueden emitir comunicados para su salita/curso asignado.");
+        if(scopes.is(authentication,"TEACHER")){
+            var teacherRooms=scopes.teacherClassrooms(authentication,institutionId);
+            boolean classroomNotice="CLASSROOM".equals(body.getScope())
+                && teacherRooms.contains(body.getTargetClassroom());
+            boolean observation="PRIVATE_STUDENT".equals(body.getScope())
+                && "OBSERVACION".equals(body.getCategory())
+                && body.getTargetStudentId()!=null
+                && students.findById(body.getTargetStudentId()).stream().anyMatch(student ->
+                   institutionId.equals(student.getTenantId()) && teacherRooms.contains(student.getClassroom()));
+            if(!classroomNotice && !observation)
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Los docentes solo pueden enviar avisos a sus aulas u observaciones a sus propios alumnos.");
+            if(observation){body.setTargetClassroom(null);body.setIsPinned(false);}
         }
+        if(scopes.is(authentication,"PRECEPTOR") && "PRIVATE_STUDENT".equals(body.getScope()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"No podés publicar mensajes privados sin asignación.");
         if (body.getCreatedAt() == null) {
             body.setCreatedAt(java.time.LocalDateTime.now());
         }
@@ -48,6 +90,9 @@ public class AnnouncementController {
         }
         body.setId(UUID.randomUUID().toString());
         body.setTenantId(institutionId);
+        body.setAuthorId(authentication.getName());
+        body.setAuthorName(authentication.getName().split("@")[0]);
+        body.setAuthorRole(authentication.getAuthorities().iterator().next().getAuthority().replace("ROLE_",""));
         return ResponseEntity.ok(repository.save(body));
     }
 
@@ -56,12 +101,23 @@ public class AnnouncementController {
     public ResponseEntity<AnnouncementJpaEntity> updateAnnouncement(
             @RequestHeader("X-Institution-Id") String institutionId,
             @PathVariable String id,
-            @RequestBody AnnouncementJpaEntity body) {
+            @RequestBody AnnouncementJpaEntity body,
+            org.springframework.security.core.Authentication authentication) {
 
         return repository.findById(id).map(existing -> {
             if (!existing.getTenantId().equals(institutionId)) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No pertenece a esta institución.");
             }
+            if(scopes.is(authentication,"TEACHER")){
+                var rooms=scopes.teacherClassrooms(authentication,institutionId);
+                if(!existing.getAuthorId().equalsIgnoreCase(authentication.getName()) ||
+                    !"CLASSROOM".equals(existing.getScope()) || !rooms.contains(existing.getTargetClassroom()) ||
+                    !"CLASSROOM".equals(body.getScope()) || !rooms.contains(body.getTargetClassroom()))
+                    throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Solo podés editar tus avisos de aula.");
+            }
+            if(scopes.is(authentication,"PRECEPTOR") &&
+                ("PRIVATE_STUDENT".equals(existing.getScope()) || "PRIVATE_STUDENT".equals(body.getScope())))
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN);
             existing.setTitle(body.getTitle());
             existing.setContent(body.getContent());
             existing.setCategory(body.getCategory());
@@ -78,12 +134,19 @@ public class AnnouncementController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteAnnouncement(
             @RequestHeader("X-Institution-Id") String institutionId,
-            @PathVariable String id) {
+            @PathVariable String id,
+            org.springframework.security.core.Authentication authentication) {
 
         return repository.findById(id).map(announcement -> {
             if (!announcement.getTenantId().equals(institutionId)) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No pertenece a esta institución.");
             }
+            if(scopes.is(authentication,"TEACHER") &&
+                 (!announcement.getAuthorId().equalsIgnoreCase(authentication.getName()) ||
+                  !scopes.teacherClassrooms(authentication,institutionId).contains(announcement.getTargetClassroom())))
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Solo podés eliminar tus propios avisos de aula.");
+            if(scopes.is(authentication,"PRECEPTOR") && "PRIVATE_STUDENT".equals(announcement.getScope()))
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN);
             repository.delete(announcement);
             return ResponseEntity.noContent().<Void>build();
         }).orElseGet(() -> ResponseEntity.notFound().build());

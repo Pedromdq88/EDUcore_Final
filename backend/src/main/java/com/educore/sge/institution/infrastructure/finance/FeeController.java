@@ -14,9 +14,14 @@ import java.util.Map;
 public class FeeController {
 
     private final FeeService feeService;
+    private final com.educore.sge.auth.AuthService auth;
+    private final com.educore.sge.kindergarten.infrastructure.repository.StudentJpaRepository students;
+    private final com.educore.sge.auth.RoleScopeService scopes;
 
-    public FeeController(FeeService feeService) {
-        this.feeService = feeService;
+    public FeeController(FeeService feeService, com.educore.sge.auth.AuthService auth,
+            com.educore.sge.kindergarten.infrastructure.repository.StudentJpaRepository students,
+            com.educore.sge.auth.RoleScopeService scopes) {
+        this.feeService = feeService; this.auth = auth; this.students = students; this.scopes = scopes;
     }
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'TUTOR')")
@@ -24,8 +29,19 @@ public class FeeController {
     public ResponseEntity<List<FeeJpaEntity>> getStudentFees(
             @RequestHeader("X-Institution-Id") String institutionId,
             @PathVariable String studentId,
-            @RequestParam(defaultValue = "2026") int academicYear) {
-        return ResponseEntity.ok(feeService.getStudentFees(institutionId, studentId, academicYear));
+            @RequestParam(defaultValue = "2026") int academicYear,
+            @RequestHeader(value="Authorization",required=false) String authorization,
+            org.springframework.security.core.Authentication authentication) {
+        boolean tutor=false;
+        if (authorization != null && authorization.startsWith("Bearer ")) {
+            var user = auth.authenticate(authorization.substring(7), institutionId)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNAUTHORIZED));
+            tutor = user.role == com.educore.sge.shared.Rol.TUTOR;
+            if (tutor &&
+                !students.existsByIdAndTutorsId(studentId,scopes.verifiedTutorId(authentication,institutionId)))
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Alumno no vinculado a la cuenta.");
+        }
+        return ResponseEntity.ok(tutor ? feeService.peekStudentFees(institutionId, studentId, academicYear) : feeService.getStudentFees(institutionId, studentId, academicYear));
     }
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")

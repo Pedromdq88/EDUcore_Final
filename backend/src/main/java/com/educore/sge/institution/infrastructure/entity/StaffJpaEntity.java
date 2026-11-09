@@ -34,8 +34,9 @@ public class StaffJpaEntity extends BaseInstitutionEntity {
     @Column(name = "email", nullable = false, length = 150)
     private String email;
 
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
     @Column(name = "password", nullable = false, length = 255)
-    private String password = "123";
+    private String password; // No representa una contraseña de acceso; la API de auth se implementará aparte.
 
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 50)

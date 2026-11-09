@@ -23,9 +23,10 @@ public class InstitutionController {
         this.repository = repository;
     }
 
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')")
     @GetMapping
-    public List<InstitutionJpaEntity> getAllInstitutions() {
-        return repository.findAll();
+    public List<InstitutionJpaEntity> getAllInstitutions(@RequestHeader("X-Institution-Id") String tenantId) {
+        return repository.findById(tenantId).map(List::of).orElse(List.of());
     }
 
     // 1. GET: Consultar correos oficiales de la institución activa

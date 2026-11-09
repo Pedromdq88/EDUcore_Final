@@ -21,15 +21,24 @@ public class ClassroomConfigController {
     // 1. Dejamos una sola inyección del repositorio
     @Autowired
     private ClassroomConfigRepository repository;
+    @Autowired
+    private com.educore.sge.auth.RoleScopeService scopes;
 
     @GetMapping
     public List<ClassroomConfigJpaEntity> getClassrooms(
-            @RequestHeader("X-Institution-Id") String institutionId) {
-        return repository.findByTenantId(institutionId);
+            @RequestHeader("X-Institution-Id") String institutionId,
+            org.springframework.security.core.Authentication authentication) {
+        var rooms=repository.findByTenantId(institutionId);
+        if(scopes.is(authentication,"TEACHER")){
+            var allowed=scopes.teacherClassrooms(authentication,institutionId);
+            return rooms.stream().filter(room->allowed.contains(room.getName())).toList();
+        }
+        return rooms;
     }
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PostMapping
+    @org.springframework.transaction.annotation.Transactional
     public List<ClassroomConfigJpaEntity> createClassroom(
             @RequestHeader("X-Institution-Id") String institutionId,
             @RequestBody ClassroomConfigJpaEntity payload) {
@@ -43,29 +52,47 @@ public class ClassroomConfigController {
         }
 
         List<ClassroomConfigJpaEntity> createdList = new java.util.ArrayList<>();
-
-        if (ClassroomShift.AMBOS.equals(payload.getShift())) {
-            ClassroomConfigJpaEntity manana = new ClassroomConfigJpaEntity();
-            manana.setId(UUID.randomUUID().toString());
-            manana.setTenantId(institutionId);
-            manana.setName(payload.getName() + " (mañana)");
-            manana.setMinimumAge(payload.getMinimumAge());
-            manana.setShift(ClassroomShift.MANANA);
-            createdList.add(repository.save(manana));
-
-            ClassroomConfigJpaEntity tarde = new ClassroomConfigJpaEntity();
-            tarde.setId(UUID.randomUUID().toString());
-            tarde.setTenantId(institutionId);
-            tarde.setName(payload.getName() + " (tarde)");
-            tarde.setMinimumAge(payload.getMinimumAge());
-            tarde.setShift(ClassroomShift.TARDE);
-            createdList.add(repository.save(tarde));
-        } else {
-            payload.setId(UUID.randomUUID().toString());
+        String name=payload.getName()==null?"":payload.getName().trim();
+        if(name.isBlank())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Nombre del aula obligatorio");
+        if(payload.getShift()==ClassroomShift.AMBOS){
+            // Dos registros físicos independientes para evitar conflictos de horarios.
+            for(ClassroomShift turn : List.of(ClassroomShift.MANANA,ClassroomShift.TARDE)){
+                String roomName=name+" ("+(turn==ClassroomShift.MANANA?"Mañana":"Tarde")+")";
+                ensureAvailable(institutionId,roomName,turn,null);
+                ClassroomConfigJpaEntity room=new ClassroomConfigJpaEntity();
+                room.setId(UUID.randomUUID().toString());room.setTenantId(institutionId);
+                room.setName(roomName);room.setMinimumAge(payload.getMinimumAge());room.setShift(turn);
+                createdList.add(repository.save(room));
+            }
+        }else{
+            ensureAvailable(institutionId,name,payload.getShift(),null);
+            payload.setName(name);payload.setId(UUID.randomUUID().toString());
             createdList.add(repository.save(payload));
         }
 
         return createdList;
+    }
+
+    /** Cuatro categorías iniciales. No modifica aulas existentes ni las duplica. */
+    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
+    @PostMapping("/defaults")
+    @org.springframework.transaction.annotation.Transactional
+    public List<ClassroomConfigJpaEntity> createDefaults(@RequestHeader("X-Institution-Id") String institutionId) {
+        if (!repository.findByTenantId(institutionId).isEmpty())
+            throw new ResponseStatusException(HttpStatus.CONFLICT,"La institución ya tiene aulas: modificá las existentes desde el gestor.");
+        java.util.List<ClassroomConfigJpaEntity> result = new java.util.ArrayList<>();
+        String[] names = {"Maternal (1-2 años)", "Primera sección (3 años)", "Segunda sección (4 años)", "Tercera sección (5 años)"};
+        int[] ages = {1,3,4,5};
+        for (int i=0; i<names.length; i++) {
+            for(ClassroomShift turn : List.of(ClassroomShift.MANANA,ClassroomShift.TARDE)){
+                ClassroomConfigJpaEntity room=new ClassroomConfigJpaEntity();
+                room.setId(UUID.randomUUID().toString());room.setTenantId(institutionId);
+                room.setName(names[i]+" ("+(turn==ClassroomShift.MANANA?"Mañana":"Tarde")+")");
+                room.setMinimumAge(ages[i]);room.setShift(turn);
+                result.add(repository.save(room));
+            }
+        }
+        return result;
     }
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
@@ -104,15 +131,27 @@ public class ClassroomConfigController {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body("No tienes permiso para editar esta aula");
             }
 
-            existingClassroom.setName(payload.getName());
+            if(payload.getShift()==ClassroomShift.AMBOS && existingClassroom.getShift()!=ClassroomShift.AMBOS)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                   "El turno Ambos se elige al crear una nueva aula, para generar dos registros.");
+            ensureAvailable(tenantId,payload.getName().trim(),payload.getShift()==null?existingClassroom.getShift():payload.getShift(),id);
+            existingClassroom.setName(payload.getName().trim());
             existingClassroom.setMinimumAge(payload.getMinimumAge());
+            if (payload.getShift() != null) existingClassroom.setShift(payload.getShift());
 
             ClassroomConfigJpaEntity updatedClassroom = repository.save(existingClassroom);
 
             return ResponseEntity.ok(updatedClassroom);
 
+        } catch (ResponseStatusException e) { throw e;
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Error al actualizar el aula: " + e.getMessage());
         }
     }
+    private void ensureAvailable(String tenant, String name, ClassroomShift shift, String ignoreId){
+        if(repository.findByTenantId(tenant).stream().anyMatch(c->
+            !c.getId().equals(ignoreId) && c.getName().equalsIgnoreCase(name) && c.getShift()==shift))
+            throw new ResponseStatusException(HttpStatus.CONFLICT,"Ya existe esa aula con ese turno.");
+    }
+
 }

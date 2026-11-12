@@ -22,11 +22,14 @@ public class BajaService {
      * El estado cambia a PENDING_WITHDRAWAL (Pendiente de Aceptación).
      */
     @Transactional
-    @PreAuthorize("hasRole('TEACHER')") // Administrativos, Directores y Dueños también entran por jerarquía
+    @PreAuthorize("hasAnyRole('TEACHER','PRECEPTOR','ADMINISTRATIVE','DIRECTOR')") // Administrativos, Directores y Dueños también entran por jerarquía
     public void requestBaja(String studentId) {
         StudentJpaEntity student = studentRepository.findById(studentId)
             .orElseThrow(() -> new RuntimeException("Alumno no encontrado"));
 
+        if (!java.util.Objects.equals(student.getTenantId(), com.educore.sge.shared.InstitutionContext.getCurrentInstitution())) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Alumno no encontrado");
+        }
         if (student.getStatus() == StudentStatus.WITHDRAWN) {
             throw new IllegalStateException("El alumno ya se encuentra dado de baja de forma definitiva.");
         }
@@ -41,11 +44,14 @@ public class BajaService {
      * El alumno pasa a WITHDRAWN (Baja definitiva), guardando su historial intacto pero liberando la vacante.
      */
     @Transactional
-    @PreAuthorize("hasRole('DIRECTOR')") // El OWNER también puede por jerarquía
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE')") // El OWNER también puede por jerarquía
     public void approveWithdrawal(String studentId) {
         StudentJpaEntity student = studentRepository.findById(studentId)
             .orElseThrow(() -> new RuntimeException("Alumno no encontrado"));
 
+        if (!java.util.Objects.equals(student.getTenantId(), com.educore.sge.shared.InstitutionContext.getCurrentInstitution())) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Alumno no encontrado");
+        }
         if (student.getStatus() != StudentStatus.PENDING_WITHDRAWAL) {
             throw new IllegalStateException("No se puede aprobar la baja de un alumno que no tiene una solicitud pendiente.");
         }

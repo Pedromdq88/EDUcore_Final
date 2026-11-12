@@ -13,13 +13,52 @@ import java.util.UUID;
 public class FeeService {
 
     private final FeeJpaRepository feeRepository;
+    private final com.educore.sge.institution.infrastructure.repository.SchoolProfileJpaRepository profiles;
+    private final com.educore.sge.kindergarten.infrastructure.repository.StudentJpaRepository students;
 
-    public FeeService(FeeJpaRepository feeRepository) {
-        this.feeRepository = feeRepository;
+    public FeeService(FeeJpaRepository feeRepository,
+            com.educore.sge.institution.infrastructure.repository.SchoolProfileJpaRepository profiles,
+            com.educore.sge.kindergarten.infrastructure.repository.StudentJpaRepository students) {
+        this.feeRepository = feeRepository; this.profiles=profiles; this.students=students;
+    }
+
+    private void validateStudentYear(String tenant, String studentId, int year) {
+        int active=profiles.findById(tenant).map(p->p.getAcademicYear()).orElseThrow(()->
+            new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND,"No existe el perfil escolar."));
+        if(year != active) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,
+            "Solo se admite el ciclo lectivo activo " + active);
+        students.findById(studentId).filter(s->tenant.equals(s.getTenantId())).orElseThrow(()->
+            new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND,"Alumno no encontrado en la escuela."));
+    }
+
+    /** Consulta de Tutor: nunca inserta cuotas por abrir la pantalla. */
+    @Transactional(readOnly = true)
+    public List<FeeJpaEntity> peekStudentFees(String institutionId, String studentId, int academicYear) {
+        validateStudentYear(institutionId, studentId, academicYear);
+        List<FeeJpaEntity> saved=feeRepository.findByTenantIdAndStudentIdAndAcademicYear(institutionId, studentId, academicYear);
+        if(!saved.isEmpty()) return saved;
+        // Mostrar meses y estados calculados sin crear filas al consultar como TUTOR.
+        List<FeeJpaEntity> preview=new ArrayList<>();
+        LocalDate today=LocalDate.now();
+        for(int month=0;month<=12;month++) {
+            if(month>0 && month<3)continue;
+            FeeJpaEntity draft=new FeeJpaEntity();
+            draft.setTenantId(institutionId);draft.setStudentId(studentId);draft.setAcademicYear(academicYear);
+            draft.setFeeType(month==0?FeeType.MATRICULA:FeeType.MENSUALIDAD);
+            draft.setMonthNumber(month);
+            LocalDate due=month==0?LocalDate.of(academicYear,2,28):LocalDate.of(academicYear,month,10);
+            draft.setDueDate(due);
+            draft.setStatus(today.isAfter(due)?FeeStatus.OVERDUE:
+                (month==0 || (today.getYear()==academicYear && today.getMonthValue()==month))?
+                FeeStatus.PENDING:FeeStatus.INACTIVE);
+            preview.add(draft);
+        }
+        return preview;
     }
 
     @Transactional
     public List<FeeJpaEntity> getStudentFees(String institutionId, String studentId, int academicYear) {
+        validateStudentYear(institutionId,studentId,academicYear);
         List<FeeJpaEntity> list = feeRepository.findByTenantIdAndStudentIdAndAcademicYear(institutionId, studentId, academicYear);
         if (list.isEmpty()) {
             return initializeStudentFees(institutionId, studentId, academicYear);
@@ -76,6 +115,8 @@ public class FeeService {
 
     @Transactional
     public FeeJpaEntity toggleFeePayment(String institutionId, String studentId, int academicYear, int monthNumber, String adminUserId) {
+        validateStudentYear(institutionId,studentId,academicYear);
+        if (monthNumber!=0 && (monthNumber<3||monthNumber>12)) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,"Mes no válido.");
         FeeJpaEntity fee = feeRepository.findByTenantIdAndStudentIdAndAcademicYearAndMonthNumber(institutionId, studentId, academicYear, monthNumber)
                 .orElseGet(() -> {
                     FeeJpaEntity newFee = new FeeJpaEntity();
@@ -113,10 +154,13 @@ public class FeeService {
 
     @Transactional
     public void updateContactEmails(String institutionId, String studentId, int academicYear, String receiptEmail, String queryEmail) {
+        validateStudentYear(institutionId, studentId, academicYear);
+        String receipt = com.educore.sge.shared.validation.RecordValidation.requiredEmail(receiptEmail, "comprobantes");
+        String query = com.educore.sge.shared.validation.RecordValidation.requiredEmail(queryEmail, "consultas de cuotas");
         List<FeeJpaEntity> list = feeRepository.findByTenantIdAndStudentIdAndAcademicYear(institutionId, studentId, academicYear);
         for (FeeJpaEntity fee : list) {
-            if (receiptEmail != null) fee.setReceiptEmail(receiptEmail);
-            if (queryEmail != null) fee.setQueryEmail(queryEmail);
+            fee.setReceiptEmail(receipt);
+            fee.setQueryEmail(query);
         }
         feeRepository.saveAll(list);
     }

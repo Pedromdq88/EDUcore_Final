@@ -11,4 +11,5 @@ import java.util.Optional; // 👈 Cambiado java.lang.ScopedValue por java.util.
 public interface TutorJpaRepository extends JpaRepository<TutorJpaEntity, String> {
     List<TutorJpaEntity> findByTenantId(String tenantId);
     Optional<TutorJpaEntity> findByEmail(String email);
+    Optional<TutorJpaEntity> findByTenantIdAndEmailIgnoreCase(String tenantId, String email);
 }

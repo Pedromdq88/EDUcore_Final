@@ -5,5 +5,6 @@ public enum Rol {
     DIRECTOR,
     ADMINISTRATIVE,
     PRECEPTOR,
-    TEACHER
+    TEACHER,
+    TUTOR
 }

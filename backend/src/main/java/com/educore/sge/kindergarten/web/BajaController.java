@@ -4,7 +4,6 @@ import com.educore.sge.kindergarten.application.BajaService;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 
-@CrossOrigin(origins = "*", allowedHeaders = "*")
 @RestController
 @RequestMapping("/api/v1/students")
 public class BajaController {

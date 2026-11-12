@@ -26,11 +26,31 @@ public class AuthService {
     private final AuthSessionRepository sessions;
     private final PasswordEncoder passwords;
     private final SecureRandom secureRandom = new SecureRandom();
+    private final org.springframework.context.ApplicationEventPublisher events;
 
-    public AuthService(AuthUserRepository users, AuthSessionRepository sessions, PasswordEncoder passwords) {
+    @org.springframework.beans.factory.annotation.Autowired
+    public AuthService(AuthUserRepository users, AuthSessionRepository sessions, PasswordEncoder passwords,
+            org.springframework.context.ApplicationEventPublisher events) {
         this.users = users;
         this.sessions = sessions;
         this.passwords = passwords;
+        this.events = events;
+    }
+
+    public AuthService(AuthUserRepository users, AuthSessionRepository sessions, PasswordEncoder passwords) {
+        this(users, sessions, passwords, event -> {});
+    }
+
+    private void notifyAccountCreated(String email) {
+        events.publishEvent(new com.educore.sge.auth.mail.EmailDispatchRequested(
+            email,
+            "EDUcore - Tu cuenta fue creada",
+            "Se creó una cuenta para vos en EDUcore.\n\n" +
+            "Usuario: " + email + "\n" +
+            "Contraseña inicial: tu DNI registrado en la institución.\n" +
+            "Al iniciar sesión deberás cambiarla por una contraseña personal.\n\n" +
+            "No compartas tus credenciales. Si no reconocés esta cuenta, comunicate con la institución."
+        ));
     }
 
     public static String hashToken(String token) {
@@ -125,6 +145,7 @@ public class AuthService {
         account.mustChangePassword = true;
         account.enabled = true;
         users.save(account);
+        notifyAccountCreated(email);
         return true;
     }
 
@@ -197,6 +218,7 @@ public class AuthService {
         account.enabled = true;
         account.mustChangePassword = true;
         users.save(account);
+        notifyAccountCreated(email);
         return true;
     }
 

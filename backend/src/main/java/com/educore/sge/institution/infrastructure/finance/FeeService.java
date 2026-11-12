@@ -154,10 +154,13 @@ public class FeeService {
 
     @Transactional
     public void updateContactEmails(String institutionId, String studentId, int academicYear, String receiptEmail, String queryEmail) {
+        validateStudentYear(institutionId, studentId, academicYear);
+        String receipt = com.educore.sge.shared.validation.RecordValidation.requiredEmail(receiptEmail, "comprobantes");
+        String query = com.educore.sge.shared.validation.RecordValidation.requiredEmail(queryEmail, "consultas de cuotas");
         List<FeeJpaEntity> list = feeRepository.findByTenantIdAndStudentIdAndAcademicYear(institutionId, studentId, academicYear);
         for (FeeJpaEntity fee : list) {
-            if (receiptEmail != null) fee.setReceiptEmail(receiptEmail);
-            if (queryEmail != null) fee.setQueryEmail(queryEmail);
+            fee.setReceiptEmail(receipt);
+            fee.setQueryEmail(query);
         }
         feeRepository.saveAll(list);
     }

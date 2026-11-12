@@ -47,6 +47,24 @@ public class ClassroomAssignmentService {
         return new Eligibility(age, cutoff, available, message);
     }
 
+    public int currentYear(String tenantId) {
+        return profiles.findById(tenantId)
+                .map(p -> p.getAcademicYear())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Institución no encontrada."));
+    }
+
+    public String selectExistingClassroom(String tenantId, ClassroomShift shift, String selection) {
+        if (selection == null || selection.isBlank())
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Seleccioná un aula registrada.");
+        return classrooms.findByTenantId(tenantId).stream()
+                .filter(room -> selection.equals(room.getName()))
+                .filter(room -> shift != null && (room.getShift() == shift || room.getShift() == ClassroomShift.AMBOS))
+                .findFirst()
+                .map(ClassroomConfigJpaEntity::getName)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "El aula elegida no existe en el turno seleccionado."));
+    }
+
     public String calculateClassroom(LocalDate birthDate, Integer academicYear, String tenantId) {
         return calculateClassroom(birthDate, academicYear, tenantId, null, null);
     }

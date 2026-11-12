@@ -26,7 +26,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-@CrossOrigin(origins = "*", allowedHeaders = "*")
 @RestController
 @RequestMapping("/api/v1/tutors")
 public class TutorController {
@@ -93,14 +92,18 @@ public class TutorController {
             tutor.getLastName() == null || tutor.getLastName().isBlank() || tutor.getRelationship() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Nombre, apellido y vínculo son obligatorios.");
         }
-        String dni = tutor.getDocumentNumber() == null ? "" : tutor.getDocumentNumber().replaceAll("[^0-9]", "");
-        if (dni.length() < 6 || dni.length() > 12) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"El DNI debe tener entre 6 y 12 dígitos.");
-        }
+        String dni = com.educore.sge.shared.validation.RecordValidation.requiredDni(tutor.getDocumentNumber(), "tutor");
+        tutor.setPhone(com.educore.sge.shared.validation.RecordValidation.optionalPhone(tutor.getPhone(), "tutor"));
         boolean duplicate = repository.findByTenantId(institutionId).stream().anyMatch(existing ->
-            dni.equals(existing.getDocumentNumber().replaceAll("[^0-9]", "")));
+            dni.equals(com.educore.sge.shared.validation.RecordValidation.comparableDni(existing.getDocumentNumber())));
         if (duplicate) throw new ResponseStatusException(HttpStatus.CONFLICT,"Ya existe un tutor con ese DNI. Vinculalo desde el buscador.");
         tutor.setDocumentNumber(dni);
+        if (tutor.getEmail() != null && !tutor.getEmail().isBlank()) {
+            tutor.setEmail(com.educore.sge.shared.validation.RecordValidation.requiredEmail(tutor.getEmail(), "tutor"));
+            boolean duplicateEmail = repository.findByTenantId(institutionId).stream().anyMatch(existing ->
+                tutor.getEmail().equalsIgnoreCase(existing.getEmail()));
+            if (duplicateEmail) throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un tutor con ese correo.");
+        }
         tutor.setId(UUID.randomUUID().toString());
         tutor.setTenantId(institutionId);
         TutorJpaEntity saved = repository.save(tutor);
@@ -120,6 +123,26 @@ public class TutorController {
         return java.util.Map.of("status", created ? "CREATED" : "EXISTS", "email", tutor.getEmail());
     }
 
+    /** Vista previa del impacto real antes de confirmar una baja irreversible. */
+    public record BajaPreview(int alumnosQueSeDaranDeBaja, int alumnosQueConservanTutor, List<String> nombresAlumnosQueSeDaranDeBaja) {}
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
+    @GetMapping("/{id}/baja-preview")
+    public BajaPreview vistaPreviaBajaTutor(
+            @RequestHeader("X-Institution-Id") String institutionId, @PathVariable String id) {
+        TutorJpaEntity tutor = repository.findById(id)
+                .filter(t -> institutionId.equals(t.getTenantId()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Tutor no encontrado"));
+        List<StudentJpaEntity> vinculados = studentRepository.findByTenantIdAndTutor(institutionId, tutor.getId());
+        List<String> alumnosAEliminar = vinculados.stream()
+                .filter(s -> s.getTutors() != null && s.getTutors().stream()
+                        .noneMatch(t -> !id.equals(t.getId())))
+                .map(s -> s.getFirstName() + " " + s.getLastName())
+                .toList();
+        return new BajaPreview(alumnosAEliminar.size(), vinculados.size() - alumnosAEliminar.size(), alumnosAEliminar);
+    }
+
     // PROCESAR BAJA HISTÓRICA DEL TUTOR (Aislado por Tenant)
     @Transactional
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
@@ -135,16 +158,35 @@ public class TutorController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No tienes permiso sobre tutores de otra institución.");
         }
 
-        List<StudentJpaEntity> alumnos = studentRepository.findByTenantId(institutionId);
-        // Nunca eliminamos al alumno cuando se da de baja al único tutor.
-        for (StudentJpaEntity alumno : alumnos) {
-            if (alumno.getTutors()!=null && alumno.getTutors().contains(tutor) && alumno.getTutors().size()==1)
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Antes de la baja, vinculá otro responsable a " + alumno.getFirstName() + ".");
+        // Se evalúan únicamente los alumnos vinculados a este tutor y en esta institución.
+        // Regla: NUNCA queda un alumno matriculado sin tutor. Si no hay otro tutor,
+        // se da de baja también al alumno, con historial, en la MISMA transacción.
+        List<StudentJpaEntity> vinculados = studentRepository.findByTenantIdAndTutor(institutionId, id);
+        for (StudentJpaEntity linked : vinculados) {
+            // Bloquear la matrícula impide bajas simultáneas que dejarían alumnos huérfanos.
+            StudentJpaEntity alumno = studentRepository.lockStudent(institutionId, linked.getId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
+                            "El alumno fue modificado durante esta operación. Volvé a intentar."));
+            List<TutorJpaEntity> restantes = alumno.getTutors().stream()
+                    .filter(vinculado -> !id.equals(vinculado.getId())).toList();
+            if (restantes.isEmpty()) {
+                studentHistoryRepository.save(new StudentHistoryJpaEntity(
+                        alumno.getId(), alumno.getFirstName(), alumno.getLastName(),
+                        alumno.getDocumentNumber(), alumno.getClassroom(), alumno.getBirthDate(),
+                        alumno.getContactPhone(), alumno.getAddress(), LocalDate.now()));
+                // La entidad estudiante es propietaria de student_tutors. Borrar el alumno
+                // elimina sus relaciones; los datos dependientes siguen el ON DELETE CASCADE
+                // ya definido en el esquema existente (sin cambios DDL).
+                studentRepository.delete(alumno);
+            } else {
+                alumno.setTutors(new ArrayList<>(restantes));
+                studentRepository.saveAndFlush(alumno);
+                // Si se eliminó el principal, el secundario queda identificado como
+                // principal en student_tutors.is_primary, sin migrar tablas.
+                studentTutorService.ensurePrimaryAfterRemoval(alumno.getId(), id, restantes);
+            }
         }
-        for (StudentJpaEntity alumno : alumnos) {
-            if (alumno.getTutors()!=null && alumno.getTutors().remove(tutor)) studentRepository.save(alumno);
-        }
+        studentRepository.flush();
 
         TutorHistoryJpaEntity historico = new TutorHistoryJpaEntity(
                 tutor.getId(),
@@ -178,6 +220,18 @@ public class TutorController {
             (current.getEmail() == null || !current.getEmail().equalsIgnoreCase(authentication.getName()))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo podés editar tu propio perfil.");
         }
+        String dni = com.educore.sge.shared.validation.RecordValidation.requiredDni(tutorDto.getDocumentNumber(), "tutor");
+        tutorDto.setPhone(com.educore.sge.shared.validation.RecordValidation.optionalPhone(tutorDto.getPhone(), "tutor"));
+        String email = com.educore.sge.shared.validation.RecordValidation.optionalEmail(tutorDto.getEmail(), "tutor");
+        for (TutorJpaEntity other : repository.findByTenantId(institutionId)) {
+            if (other.getId().equals(id)) continue;
+            if (dni.equals(com.educore.sge.shared.validation.RecordValidation.comparableDni(other.getDocumentNumber())))
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un tutor con ese DNI.");
+            if (!email.isEmpty() && email.equalsIgnoreCase(other.getEmail()))
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un tutor con ese correo.");
+        }
+        tutorDto.setDocumentNumber(dni);
+        if (!email.isEmpty()) tutorDto.setEmail(email);
         TutorDTO updated = tutorService.updateTutor(id, tutorDto);
         authService.syncTutorEmail(repository.findById(id).orElseThrow());
         return ResponseEntity.ok(updated);

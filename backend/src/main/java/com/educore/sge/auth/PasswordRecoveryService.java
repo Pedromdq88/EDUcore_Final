@@ -1,5 +1,6 @@
 package com.educore.sge.auth;
 
+import com.educore.sge.auth.mail.GmailApiSender;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;

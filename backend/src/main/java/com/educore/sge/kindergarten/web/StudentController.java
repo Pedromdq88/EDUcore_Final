@@ -1,10 +1,13 @@
 package com.educore.sge.kindergarten.web;
 
 import com.educore.sge.kindergarten.application.ClassroomAssignmentService;
+import com.educore.sge.institution.infrastructure.domain.ClassroomShift;
 import com.educore.sge.kindergarten.application.StudentTutorService;
 import com.educore.sge.kindergarten.application.dto.TutorAssignmentRequest;
 import com.educore.sge.kindergarten.infrastructure.entity.StudentJpaEntity;
 import com.educore.sge.kindergarten.infrastructure.repository.StudentJpaRepository;
+import com.educore.sge.kindergarten.infrastructure.repository.TutorJpaRepository;
+import com.educore.sge.kindergarten.infrastructure.entity.TutorJpaEntity;
 import com.educore.sge.kindergarten.persistence.StudentHistoryJpaEntity;
 import com.educore.sge.kindergarten.persistence.StudentHistoryRepository;
 import org.springframework.http.HttpStatus;
@@ -16,12 +19,12 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
-@CrossOrigin(origins = "*", allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE})
 @RestController
 @RequestMapping("/api/v1/students")
 public class StudentController {
 
     private final StudentJpaRepository repository;
+    private final TutorJpaRepository tutorRepository;
     private final StudentTutorService studentTutorService;
     private final StudentHistoryRepository studentHistoryRepository;
     private final ClassroomAssignmentService classroomAssignmentService;
@@ -29,10 +32,12 @@ public class StudentController {
 
     public StudentController(
             StudentJpaRepository repository,
+            TutorJpaRepository tutorRepository,
             StudentTutorService studentTutorService,
             StudentHistoryRepository studentHistoryRepository,
             ClassroomAssignmentService classroomAssignmentService, com.educore.sge.auth.RoleScopeService scopes) {
         this.repository = repository;
+        this.tutorRepository = tutorRepository;
         this.studentTutorService = studentTutorService;
         this.studentHistoryRepository = studentHistoryRepository;
         this.classroomAssignmentService = classroomAssignmentService;
@@ -41,6 +46,7 @@ public class StudentController {
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE', 'PRECEPTOR', 'TEACHER')")
     @GetMapping
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<?> getAllStudents(
             @RequestHeader("X-Institution-Id") String institutionId,
             org.springframework.security.core.Authentication authentication) {
@@ -49,6 +55,11 @@ public class StudentController {
             var rooms=scopes.teacherClassrooms(authentication,institutionId);
             return list.stream().filter(s->rooms.contains(s.getClassroom()))
                 .map(s->new StudentSummary(s.getId(),s.getFirstName(),s.getLastName(),s.getClassroom(),s.getAcademicYear())).toList();
+        }
+        // La planilla de Dirección necesita ambos contactos; inicializar la lista
+        // dentro de la transacción para no depender de Open Session in View.
+        for (var student : list) {
+            if (student.getTutors() != null) student.getTutors().size();
         }
         return list;
     }
@@ -85,12 +96,73 @@ public class StudentController {
 
     public record StudentSummary(String id, String firstName, String lastName, String classroom, Integer academicYear) {}
 
+    private void validateStudentIdentityAndContact(StudentJpaEntity student) {
+        // Los registros con documentación física deben llevar únicamente dígitos.
+        // La condición "sin DNI" / "en trámite" se maneja sin inventar números.
+        if (student.getDniStatus() == null ||
+                "FISICO".equals(student.getDniStatus().name())) {
+            student.setDocumentNumber(com.educore.sge.shared.validation.RecordValidation
+                    .requiredDni(student.getDocumentNumber(), "alumno"));
+        } else if (student.getDocumentNumber() != null &&
+                student.getDocumentNumber().matches("[0-9]+")) {
+            student.setDocumentNumber(com.educore.sge.shared.validation.RecordValidation
+                    .requiredDni(student.getDocumentNumber(), "alumno"));
+        }
+        student.setStudentLandlinePhone(com.educore.sge.shared.validation.RecordValidation
+                .optionalPhone(student.getStudentLandlinePhone(), "contacto del alumno"));
+        student.setStudentCellphone(com.educore.sge.shared.validation.RecordValidation
+                .optionalPhone(student.getStudentCellphone(), "celular del alumno"));
+        student.setContactPhone(com.educore.sge.shared.validation.RecordValidation
+                .optionalPhone(student.getContactPhone(), "contacto del alumno"));
+    }
+
+    private void validateStudentDuplicates(String institutionId, String currentId, StudentJpaEntity student) {
+        String dni = com.educore.sge.shared.validation.RecordValidation.comparableDni(student.getDocumentNumber());
+        String legajo = student.getLegajoNumber() == null ? "" : student.getLegajoNumber().trim();
+        for (StudentJpaEntity existing : repository.findByTenantId(institutionId)) {
+            if (existing.getId().equals(currentId)) continue;
+            if (!dni.isEmpty() && dni.equals(
+                com.educore.sge.shared.validation.RecordValidation.comparableDni(existing.getDocumentNumber()))) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un alumno con ese DNI en esta institución.");
+            }
+            if (!legajo.isEmpty() && legajo.equalsIgnoreCase(
+                existing.getLegajoNumber() == null ? "" : existing.getLegajoNumber().trim())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe un alumno con ese número de legajo en esta institución.");
+            }
+        }
+    }
+
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PostMapping
+    @org.springframework.transaction.annotation.Transactional
     public StudentJpaEntity createStudent(
             @RequestHeader("X-Institution-Id") String institutionId,
             @RequestBody StudentJpaEntity student) {
 
+        if (student.getFirstName() == null || student.getFirstName().isBlank() ||
+            student.getLastName() == null || student.getLastName().isBlank() || student.getBirthDate() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nombre, apellido y fecha de nacimiento son obligatorios.");
+        }
+        // Alta atómica: no se guarda un alumno que todavía no tenga tutor.
+        List<TutorJpaEntity> tutorInputs = student.getTutors();
+        if (tutorInputs == null || tutorInputs.isEmpty() || tutorInputs.size() > 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Seleccioná al menos un tutor (máximo dos).");
+        }
+        List<TutorJpaEntity> tutores = new java.util.ArrayList<>();
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (TutorJpaEntity inputTutor : tutorInputs) {
+            if (inputTutor == null || inputTutor.getId() == null || !ids.add(inputTutor.getId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No se pueden repetir tutores ni enviar un tutor vacío.");
+            }
+            TutorJpaEntity tutor = tutorRepository.findById(inputTutor.getId())
+                    .filter(t -> institutionId.equals(t.getTenantId()))
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "El tutor seleccionado no existe en esta institución."));
+            tutores.add(tutor);
+        }
+        student.setTutors(tutores);
+        validateStudentIdentityAndContact(student);
+        validateStudentDuplicates(institutionId, null, student);
         student.setId(UUID.randomUUID().toString());
         student.setTenantId(institutionId);
 
@@ -107,7 +179,35 @@ public class StudentController {
         );
         student.setClassroom(salaCalculada);
 
-        return repository.save(student);
+        StudentJpaEntity saved = repository.saveAndFlush(student);
+        // Primer tutor elegido por el usuario es principal desde el alta atómica.
+        studentTutorService.setPrimaryTutor(saved.getId(), tutores.get(0).getId());
+        return saved;
+    }
+
+    @GetMapping("/{studentId}/tutors/primary")
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE','PRECEPTOR')")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public java.util.Map<String, String> primaryTutor(
+            @PathVariable String studentId, @RequestHeader("X-Institution-Id") String tenantId) {
+        StudentJpaEntity student = repository.findById(studentId)
+                .filter(s -> tenantId.equals(s.getTenantId()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado"));
+        // Para matrículas históricas sin marca, el usuario debe confirmar el principal
+        // en el formulario; no inventar un responsable por orden alfabético.
+        String id = repository.findPrimaryTutorId(studentId).orElse("");
+        return java.util.Map.of("tutorId", id);
+    }
+
+    @GetMapping("/tutor-primaries")
+    @PreAuthorize("hasAnyRole('DIRECTOR','ADMINISTRATIVE','PRECEPTOR')")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public java.util.Map<String, String> primaryTutors(@RequestHeader("X-Institution-Id") String tenantId) {
+        java.util.Map<String, String> values = new java.util.HashMap<>();
+        repository.findPrimaryTutorsByTenant(tenantId).forEach(row -> {
+            values.put(String.valueOf(row[0]), String.valueOf(row[1]));
+        });
+        return values;
     }
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
@@ -123,6 +223,7 @@ public class StudentController {
 
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PostMapping("/{id}/baja")
+    @org.springframework.transaction.annotation.Transactional
     public void darDeBajaAlumno(@PathVariable String id, @RequestHeader("X-Institution-Id") String institutionId) {
         StudentJpaEntity alumno = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado"));
@@ -144,6 +245,29 @@ public class StudentController {
         repository.delete(alumno);
     }
 
+    public record ClassroomChange(String classroomName, ClassroomShift shift) {}
+
+    @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
+    @PatchMapping("/{id}/classroom")
+    @org.springframework.transaction.annotation.Transactional
+    public StudentJpaEntity assignClassroom(
+            @RequestHeader("X-Institution-Id") String institutionId,
+            @PathVariable String id,
+            @RequestBody ClassroomChange request) {
+        StudentJpaEntity student = repository.lockStudent(institutionId, id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alumno no encontrado."));
+        if (student.getStatus() != com.educore.sge.kindergarten.infrastructure.entity.StudentStatus.ACTIVE)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "El alumno no está activo.");
+        if (student.getAcademicYear() == null || student.getAcademicYear() != classroomAssignmentService.currentYear(institutionId))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "El alumno no pertenece al ciclo lectivo activo.");
+        if (request == null || request.shift() == null)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Elegí un turno y un aula.");
+        student.setClassroom(classroomAssignmentService.selectExistingClassroom(
+                institutionId, request.shift(), request.classroomName()));
+        student.setStudentShift(request.shift());
+        return repository.save(student);
+    }
+
     @PreAuthorize("hasAnyRole('DIRECTOR', 'ADMINISTRATIVE')")
     @PutMapping("/{id}")
     public StudentJpaEntity updateStudent(
@@ -157,6 +281,9 @@ public class StudentController {
         if (!institutionId.equals(existing.getTenantId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Este alumno pertenece a otra institución.");
         }
+        // Revalidar duplicados también al editar, exceptuando el mismo registro.
+        validateStudentIdentityAndContact(updatedStudent);
+        validateStudentDuplicates(institutionId, id, updatedStudent);
         // Datos básicos
         existing.setLegajoNumber(updatedStudent.getLegajoNumber());
         existing.setFirstName(updatedStudent.getFirstName());
@@ -169,10 +296,11 @@ public class StudentController {
             existing.setAcademicYear(updatedStudent.getAcademicYear());
         }
 
-        // Valida siempre la sala elegida contra la calculadora de la institución.
-        existing.setClassroom(classroomAssignmentService.calculateClassroom(
-                existing.getBirthDate(), existing.getAcademicYear(), institutionId,
-                existing.getStudentShift(), updatedStudent.getClassroom()));
+        ClassroomShift selectedShift = updatedStudent.getStudentShift() != null
+                ? updatedStudent.getStudentShift() : existing.getStudentShift();
+        existing.setClassroom(classroomAssignmentService.selectExistingClassroom(
+                institutionId, selectedShift, updatedStudent.getClassroom()));
+        existing.setStudentShift(selectedShift);
 
         // 1. Identidad y Documentación Legal
         existing.setCuil(updatedStudent.getCuil());
@@ -222,8 +350,6 @@ public class StudentController {
         existing.setBirthPlace(updatedStudent.getBirthPlace());
         existing.setAddress(updatedStudent.getAddress());
         existing.setContactPhone(updatedStudent.getContactPhone());
-        existing.setStudentShift(updatedStudent.getStudentShift());
-
         return repository.save(existing);
     }
 }

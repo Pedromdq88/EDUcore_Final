@@ -1,5 +1,7 @@
 package com.educore.sge.auth;
 
+import com.educore.sge.auth.security.LoginAttemptLimiter;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -15,6 +17,7 @@ import java.util.List;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
     private final AuthService auth;
+    private final LoginAttemptLimiter loginLimiter;
     private final TutorJpaRepository tutors;
     private final AuthUserRepository users;
     private final StudentJpaRepository students;
@@ -22,16 +25,28 @@ public class AuthController {
     private final com.educore.sge.institution.infrastructure.repository.StaffJpaRepository staff;
     public AuthController(AuthService auth, TutorJpaRepository tutors, StudentJpaRepository students,
          AuthUserRepository users, com.educore.sge.institution.infrastructure.repository.StaffJpaRepository staff,
-         RoleScopeService scopes) {
+         RoleScopeService scopes, LoginAttemptLimiter loginLimiter) {
         this.auth = auth; this.tutors = tutors; this.students = students; this.users = users; this.staff=staff;
         this.scopes = scopes;
+        this.loginLimiter = loginLimiter;
     }
     public record LoginRequest(String institutionId, String email, String password) {}
     public record ChangePasswordRequest(String currentPassword, String newPassword) {}
 
     @PostMapping("/login")
-    public AuthService.LoginResult login(@RequestBody LoginRequest body) {
-        return auth.login(body.institutionId(), body.email(), body.password());
+    public AuthService.LoginResult login(@RequestBody LoginRequest body, HttpServletRequest request) {
+        if (body == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Datos de acceso incompletos.");
+        String ip = request.getRemoteAddr(); // No confiar en X-Forwarded-For no validado.
+        loginLimiter.check(body.institutionId(), body.email(), ip);
+        try {
+            AuthService.LoginResult result = auth.login(body.institutionId(), body.email(), body.password());
+            loginLimiter.succeeded(body.institutionId(), body.email(), ip);
+            return result;
+        } catch (ResponseStatusException ex) {
+            if (ex.getStatusCode().value() == 401)
+                loginLimiter.failed(body.institutionId(), body.email(), ip);
+            throw ex;
+        }
     }
 
     @GetMapping("/me")

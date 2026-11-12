@@ -97,6 +97,7 @@ public class StudentController {
     public record StudentSummary(String id, String firstName, String lastName, String classroom, Integer academicYear) {}
 
     private void validateStudentIdentityAndContact(StudentJpaEntity student) {
+        com.educore.sge.kindergarten.application.StudentOptionalValidation.validate(student);
         // Los registros con documentación física deben llevar únicamente dígitos.
         // La condición "sin DNI" / "en trámite" se maneja sin inventar números.
         if (student.getDniStatus() == null ||

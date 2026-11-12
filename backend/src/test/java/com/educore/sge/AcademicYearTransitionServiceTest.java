@@ -12,7 +12,7 @@ import java.time.ZoneId;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-class AcademicYearTransitionServiceTest {
+class AcademicYearTransitionServiceRegressionTest {
     private final StudentJpaRepository repository = mock(StudentJpaRepository.class);
     private final AcademicYearTransitionService service = new AcademicYearTransitionService(
         repository, Clock.fixed(Instant.parse("2026-11-12T15:00:00Z"), ZoneId.of("America/Argentina/Buenos_Aires")));

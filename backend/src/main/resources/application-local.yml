@@ -9,7 +9,7 @@ spring:
   datasource:
     url: jdbc:mysql://localhost:3306/educore_sge?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
     username: ${EDUCORE_DB_USER:root}
-    password: ${EDUCORE_DB_PASSWORD:Root}
+    password: ${EDUCORE_DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:

@@ -75,6 +75,8 @@ public class StudentMedicalRecordController {
                 HttpStatus.NOT_FOUND, "Alumno no encontrado en esta institución."));
 
         // Mapeo completo de todos los campos de las planillas oficiales
+        validateMedicalFields(incoming);
+
         record.setObraSocial(incoming.getObraSocial());
         record.setDetalleObraSocial(incoming.getDetalleObraSocial());
         record.setNroAfiliado(incoming.getNroAfiliado());
@@ -137,5 +139,35 @@ public class StudentMedicalRecordController {
 
         StudentMedicalRecord saved = medicalRepository.save(record);
         return ResponseEntity.ok(saved);
+    }
+
+    private static void validateMedicalFields(StudentMedicalRecord record) {
+        validateText(record.getObraSocial(), "Obra social", 10);
+        validateText(record.getDetalleObraSocial(), "Detalle de obra social", 255);
+        validateText(record.getNroAfiliado(), "Número de afiliado", 100);
+        validateText(record.getDetalleInternacion(), "Detalle de internación", 4000);
+        validateText(record.getMotivoOperacion(), "Motivo de operación", 4000);
+        validateText(record.getCualMedicacion(), "Medicación y dosis", 4000);
+
+        String coverage = record.getObraSocial();
+        if (coverage != null && !coverage.isEmpty() && !coverage.matches("(?iu)s[ií]|no"))
+            throw badField("Obra social: ingresá Sí o No.");
+        String membership = record.getNroAfiliado();
+        if (membership != null && !membership.isEmpty() && !membership.matches("(?i)[a-z0-9]+(?:[ ./-][a-z0-9]+)*"))
+            throw badField("Número de afiliado: ingresá letras o números separados por espacios, puntos, guiones o barras.");
+        String year = record.getAnioOperacion();
+        int currentYear = java.time.Year.now(java.time.ZoneId.of("America/Argentina/Buenos_Aires")).getValue();
+        if (year != null && !year.isEmpty() && (!year.matches("[1-9][0-9]{3}") || Integer.parseInt(year) > currentYear))
+            throw badField("Año de operación: ingresá un año de cuatro cifras que no sea futuro.");
+    }
+
+    private static void validateText(String value, String label, int limit) {
+        if (value == null || value.isEmpty()) return;
+        if (value.length() > limit) throw badField(label + ": máximo " + limit + " caracteres.");
+        if (value.isBlank()) throw badField(label + ": completá el dato o dejalo vacío.");
+    }
+
+    private static org.springframework.web.server.ResponseStatusException badField(String message) {
+        return new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST, message);
     }
 }

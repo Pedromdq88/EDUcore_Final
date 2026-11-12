@@ -7,6 +7,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 
+import com.educore.sge.shared.validation.RecordValidation;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -50,11 +55,28 @@ public class JudicialRestrictionController {
         }
 
         checkStudent(institutionId, studentId);
-        body.setFirstName(com.educore.sge.shared.validation.RecordValidation.requiredText(body.getFirstName(), "Nombre", 100));
-        body.setLastName(com.educore.sge.shared.validation.RecordValidation.requiredText(body.getLastName(), "Apellido", 100));
-        body.setDocumentNumber(com.educore.sge.shared.validation.RecordValidation.requiredDni(body.getDocumentNumber(), "persona restringida"));
-        body.setDocumentType(com.educore.sge.shared.validation.RecordValidation.requiredText(body.getDocumentType(), "Tipo de documento", 50));
-        body.setDescription(com.educore.sge.shared.validation.RecordValidation.requiredText(body.getDescription(), "Motivo de restricción", 4000));
+        body.setFirstName(personName(body.getFirstName(), "Nombre"));
+        body.setLastName(personName(body.getLastName(), "Apellido"));
+        if (body.getDocumentNumber() == null || !body.getDocumentNumber().matches("[0-9]{6,8}")) {
+            throw invalidField("DNI: ingresá entre 6 y 8 números, sin puntos ni espacios.");
+        }
+        String documentType = RecordValidation.requiredText(body.getDocumentType(), "Tipo de documento", 20);
+        if (!documentType.matches("[\\p{L}][\\p{L}\\p{M}0-9 ./-]*")) {
+            throw invalidField("Tipo de documento: ingresá un tipo válido, por ejemplo DNI.");
+        }
+        body.setDocumentType(documentType);
+        String description = RecordValidation.requiredText(body.getDescription(), "Descripción de la medida", 4000);
+        if (description.length() < 5) {
+            throw invalidField("Descripción de la medida: ingresá al menos 5 caracteres.");
+        }
+        body.setDescription(description);
+        body.setLegajoNumber(judicialReference(body.getLegajoNumber(), "Legajo judicial"));
+        body.setMatrixNumber(judicialReference(body.getMatrixNumber(), "Matrícula"));
+        body.setFolioNumber(judicialReference(body.getFolioNumber(), "Folio"));
+        if (body.getInscriptionDate() != null && (body.getInscriptionDate().getYear() < 1000
+                || body.getInscriptionDate().isAfter(LocalDate.now(ZoneId.of("America/Argentina/Buenos_Aires"))))) {
+            throw invalidField("Fecha de inscripción: ingresá una fecha válida que no sea futura.");
+        }
         body.setId(UUID.randomUUID().toString());
         body.setTenantId(institutionId);
         body.setStudentId(studentId);
@@ -79,5 +101,27 @@ public class JudicialRestrictionController {
                     return ResponseEntity.noContent().<Void>build();
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private static String personName(String value, String label) {
+        String name = RecordValidation.requiredText(value, label, 20);
+        if (name.length() < 2 || !name.matches("[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:[ '-][A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)*")) {
+            throw invalidField(label + ": ingresá entre 2 y 20 letras, con espacios, guiones o apóstrofes.");
+        }
+        return name;
+    }
+
+    private static String judicialReference(String value, String label) {
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        if (value.length() > 50 || !value.matches("[\\p{L}0-9]+(?:[ ./_-][\\p{L}0-9]+)*")) {
+            throw invalidField(label + ": ingresá hasta 50 caracteres con letras, números y separadores.");
+        }
+        return value;
+    }
+
+    private static ResponseStatusException invalidField(String message) {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
     }
 }

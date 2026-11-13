@@ -87,7 +87,7 @@ public class AuthController {
             String shift, String status, String nationality, String address, String contactPhone,
             String cuil, String genderIdentity, String birthCountry,
             String birthProvince, String birthLocality, String addressDistrict, Boolean hasSiblings,
-            Integer siblingCount, List<LinkedTutor> tutors) {}
+            Integer siblingCount, String primaryTutorId, List<LinkedTutor> tutors) {}
 
     @PreAuthorize("hasRole('TUTOR')")
     @GetMapping("/my-students/{studentId}")
@@ -110,8 +110,11 @@ public class AuthController {
             address = String.join(" ", java.util.stream.Stream.of(student.getStreet(), student.getStreetNumber(),
                     student.getAddressLocality()).filter(v -> v != null && !v.isBlank()).toList());
         }
-        String contact = student.getContactPhone();
-        if (contact == null || contact.isBlank()) contact = student.getStudentCellphone();
+        String primaryTutorId = students.findPrimaryTutorId(studentId).orElse("");
+        String contact = primaryTutorId.isBlank() ? null : tutors.findById(primaryTutorId)
+            .filter(t -> tenantId.equals(t.getTenantId()))
+            .map(com.educore.sge.kindergarten.infrastructure.entity.TutorJpaEntity::getPhone)
+            .orElse(null);
         return new MyStudentDetail(student.getId(), student.getFirstName(), student.getLastName(),
             student.getDocumentNumber(), student.getLegajoNumber(), student.getBirthDate(),
             student.getClassroom(), student.getAcademicYear(),
@@ -121,7 +124,7 @@ public class AuthController {
             student.getGenderIdentity() == null ? "" : student.getGenderIdentity().name(),
             student.getBirthCountry() == null ? "" : student.getBirthCountry().name(),
             student.getBirthProvince(), student.getBirthLocality(), student.getAddressDistrict(),
-            student.getHasSiblings(), student.getSiblingCount(), family);
+            student.getHasSiblings(), student.getSiblingCount(), primaryTutorId, family);
     }
 
     public record MyTutorProfile(String id, String firstName, String lastName, String email) {}

@@ -577,7 +577,35 @@ CREATE TABLE auth_sessions (
                                INDEX idx_auth_sessions_expiry (expires_at)
 );
 
--- Escuela original del V1, con slug y estado para el backend V5.
+
+CREATE TABLE IF NOT EXISTS student_siblings (
+                                                tenant_id VARCHAR(36) NOT NULL,
+    student_id VARCHAR(36) NOT NULL,
+    sibling_id VARCHAR(36) NOT NULL,
+    confirmed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (student_id, sibling_id),
+
+    INDEX idx_student_siblings_tenant (tenant_id),
+    INDEX idx_student_siblings_sibling (sibling_id),
+
+    CONSTRAINT fk_siblings_tenant
+    FOREIGN KEY (tenant_id)
+    REFERENCES tenants(id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_siblings_student
+    FOREIGN KEY (student_id)
+    REFERENCES students(id) ON DELETE CASCADE,
+
+    CONSTRAINT fk_siblings_other
+    FOREIGN KEY (sibling_id)
+    REFERENCES students(id) ON DELETE CASCADE,
+
+    CONSTRAINT chk_student_siblings_order
+    CHECK (student_id < sibling_id)
+    );
+
+
 INSERT INTO tenants (
     id, name, cue_code, education_level, slug, status,
     direccion, phone, receipt_email, fee_query_email
@@ -599,8 +627,6 @@ INSERT INTO school_profiles (
              '+54 223 472-0000', 'contacto@onceunidos.edu.ar'
          );
 
--- Director: ficha de personal y cuenta de acceso, vinculadas.
--- El campo password heredado de institution_staff NO autentica sesiones.
 INSERT INTO institution_staff (
     id, tenant_id, first_name, last_name, email,
     password, role, document_number, hire_date, status
@@ -611,7 +637,6 @@ INSERT INTO institution_staff (
              'AUTH_USERS_MANAGED', 'DIRECTOR', NULL, '2026-03-01', 'ACTIVE'
          );
 
--- Contraseña de desarrollo: 1234 (BCrypt). Cambiarla antes de producción.
 INSERT INTO auth_users (
     id, tenant_id, email, password_hash, role,
     enabled, must_change_password, tutor_id, staff_id
@@ -625,7 +650,6 @@ INSERT INTO auth_users (
          );
 
 
--- Aulas por sección y por turno (registros independientes para evitar conflictos).
 INSERT INTO institution_classrooms_config (id, tenant_id, name, minimum_age, shift) VALUES
                                                                                         ('44444444-0000-0000-0000-000000000101','88888888-4444-4444-4444-121212121212','Maternal (1-2 años) (Mañana)',1,'MANANA'),
                                                                                         ('44444444-0000-0000-0000-000000000102','88888888-4444-4444-4444-121212121212','Maternal (1-2 años) (Tarde)',1,'TARDE'),
@@ -636,18 +660,15 @@ INSERT INTO institution_classrooms_config (id, tenant_id, name, minimum_age, shi
                                                                                         ('44444444-0000-0000-0000-000000000501','88888888-4444-4444-4444-121212121212','Tercera sección (5 años) (Mañana)',5,'MANANA'),
                                                                                         ('44444444-0000-0000-0000-000000000502','88888888-4444-4444-4444-121212121212','Tercera sección (5 años) (Tarde)',5,'TARDE');
 
--- Materias del catálogo.
 INSERT INTO academic_subjects (id, tenant_id, name) VALUES
                                                         ('55555555-0000-0000-0000-000000000001','88888888-4444-4444-4444-121212121212','Educación Física'),
                                                         ('55555555-0000-0000-0000-000000000002','88888888-4444-4444-4444-121212121212','Música'),
                                                         ('55555555-0000-0000-0000-000000000003','88888888-4444-4444-4444-121212121212','Arte');
 
--- Correos de cuotas.
 INSERT INTO institution_email_settings (tenant_id, receipt_email, fee_query_email) VALUES
     ('88888888-4444-4444-4444-121212121212','administracion@onceunidos.com','tesoreria@onceunidos.com');
 
 
--- VERIFICACION FINAL DE INSTALACION
 SELECT
     (SELECT COUNT(*) FROM information_schema.tables
      WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE') AS tablas_creadas,

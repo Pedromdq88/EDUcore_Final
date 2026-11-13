@@ -39,6 +39,11 @@ public class ClassroomConfigController {
             var allowed=scopes.teacherClassrooms(authentication,institutionId);
             return rooms.stream().filter(room->allowed.contains(room.getName())).toList();
         }
+        if (scopes.is(authentication, "TUTOR")) {
+            var tutorId = scopes.verifiedTutorId(authentication, institutionId);
+            var linked = students.findByTenantIdAndTutor(institutionId, tutorId);
+            return rooms.stream().filter(room -> scopes.tutorCanReadClassroom(room, linked)).toList();
+        }
         return rooms;
     }
 

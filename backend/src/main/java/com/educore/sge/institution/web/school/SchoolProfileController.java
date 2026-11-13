@@ -15,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import java.util.Objects;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
@@ -86,15 +88,23 @@ public class SchoolProfileController {
     @PutMapping
     public SchoolProfileJpaEntity updateProfile(
             @RequestHeader("X-Institution-Id") String institutionId,
-            @RequestBody SchoolProfileJpaEntity updated) {
+            @RequestBody SchoolProfileJpaEntity updated,
+            Authentication authentication) {
 
         if (institutionId == null || institutionId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cabecera X-Institution-Id requerida");
         }
 
         updated.setTenantId(institutionId);
-        Integer previousYear = profileRepository.findById(institutionId)
-                .map(SchoolProfileJpaEntity::getAcademicYear).orElse(null);
+        Integer previousYear = activeYearForUpdate(institutionId);
+        boolean director = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_DIRECTOR"));
+        if (updated.getAcademicYear() == null) {
+            updated.setAcademicYear(previousYear);
+        }
+        if (!Objects.equals(previousYear, updated.getAcademicYear()) && !director) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo Dirección puede modificar el ciclo lectivo.");
+        }
         yearTransition.updateStudents(institutionId, previousYear, updated.getAcademicYear());
         updated.setCutoffDate(LocalDate.of(updated.getAcademicYear(), 6, 30));
         return profileRepository.save(updated);
@@ -160,9 +170,7 @@ public class SchoolProfileController {
             try {
                 SchoolProfileJpaEntity entity = objectMapper.readValue(ticket.getProposedDataJson(), SchoolProfileJpaEntity.class);
                 entity.setTenantId(institutionId);
-                Integer previousYear = profileRepository.findById(institutionId)
-                        .map(SchoolProfileJpaEntity::getAcademicYear).orElse(null);
-                yearTransition.updateStudents(institutionId, previousYear, entity.getAcademicYear());
+                entity.setAcademicYear(activeYearForUpdate(institutionId));
                 entity.setCutoffDate(LocalDate.of(entity.getAcademicYear(), 6, 30));
                 profileRepository.save(entity);
                 ticket.setStatus("APPROVED");
@@ -177,5 +185,11 @@ public class SchoolProfileController {
         ticket.setResolvedAt(LocalDateTime.now());
         ticketRepository.save(ticket);
         return ResponseEntity.ok(Map.of("message", approve ? "Ticket aprobado" : "Ticket rechazado"));
+    }
+
+    private Integer activeYearForUpdate(String institutionId) {
+        return profileRepository.findForUpdate(institutionId)
+                .map(SchoolProfileJpaEntity::getAcademicYear)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "No hay un ciclo lectivo activo."));
     }
 }

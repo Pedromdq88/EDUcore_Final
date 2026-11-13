@@ -17,10 +17,12 @@ import java.util.UUID;
         private final ClassScheduleRepository schedules;
         private final ClassroomConfigRepository classrooms;
         private final com.educore.sge.auth.RoleScopeService scopes;
-        public ClassScheduleController(ClassScheduleRepository schedules, ClassroomConfigRepository classrooms, com.educore.sge.auth.RoleScopeService scopes) {
+        private final com.educore.sge.kindergarten.infrastructure.repository.StudentJpaRepository students;
+        public ClassScheduleController(ClassScheduleRepository schedules, ClassroomConfigRepository classrooms, com.educore.sge.auth.RoleScopeService scopes, com.educore.sge.kindergarten.infrastructure.repository.StudentJpaRepository students) {
             this.schedules = schedules;
             this.classrooms = classrooms;
             this.scopes=scopes;
+            this.students = students;
         }
         @GetMapping
         public List<ClassScheduleJpaEntity> list(@RequestHeader("X-Institution-Id") String tenant,
@@ -31,6 +33,14 @@ import java.util.UUID;
                 var ids=classrooms.findByTenantId(tenant).stream().filter(c->allowed.contains(c.getName()))
                     .map(c->c.getId()).collect(java.util.stream.Collectors.toSet());
                 return entries.stream().filter(e->ids.contains(e.getClassroomId())).toList();
+            }
+            if (scopes.is(authentication, "TUTOR")) {
+                var tutorId = scopes.verifiedTutorId(authentication, tenant);
+                var linked = students.findByTenantIdAndTutor(tenant, tutorId);
+                var ids = classrooms.findByTenantId(tenant).stream()
+                    .filter(room -> scopes.tutorCanReadClassroom(room, linked))
+                    .map(room -> room.getId()).collect(java.util.stream.Collectors.toSet());
+                return entries.stream().filter(entry -> ids.contains(entry.getClassroomId())).toList();
             }
             return entries;
         }

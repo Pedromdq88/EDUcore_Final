@@ -46,6 +46,7 @@ public class SecurityConfig {
                         // Lectura limitada. Cada controlador comprueba la institución y los alumnos vinculados.
                         .requestMatchers(HttpMethod.GET, "/api/v1/announcements", "/api/v1/calendar/events",
                                 "/api/v1/institution/profile", "/api/v1/institutions/settings/emails",
+                                "/api/v1/classrooms-config", "/api/v1/class-schedules",
                                 "/api/v1/students/*/fees", "/api/v1/students/*/medical-record",
                                 "/api/v1/students/*/authorized-pickups").hasAnyRole("DIRECTOR","ADMINISTRATIVE","PRECEPTOR","TEACHER","TUTOR")
                         .requestMatchers("/api/v1/auth/**").authenticated()

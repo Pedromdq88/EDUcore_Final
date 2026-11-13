@@ -53,6 +53,15 @@ public class RoleScopeService {
         if(teacher.getClassroom()!=null && !teacher.getClassroom().isBlank())rooms.add(teacher.getClassroom());
         return rooms;
     }
+    public boolean tutorCanReadClassroom(
+            com.educore.sge.institution.infrastructure.entity.ClassroomConfigJpaEntity room,
+            java.util.List<com.educore.sge.kindergarten.infrastructure.entity.StudentJpaEntity> linkedStudents) {
+        return linkedStudents.stream().anyMatch(student -> room.getTenantId().equals(student.getTenantId())
+                && room.getName().equals(student.getClassroom())
+                && (room.getShift() == com.educore.sge.institution.infrastructure.domain.ClassroomShift.AMBOS
+                    || room.getShift() == student.getStudentShift()));
+    }
+
     public String teacherStaffId(Authentication a, String tenant) {
         var user=accounts.findByTenantIdAndEmailIgnoreCase(tenant,a.getName())
             .orElseThrow(()->new ResponseStatusException(HttpStatus.FORBIDDEN));
